@@ -29,4 +29,6 @@ assert(!app.includes('toggleTaskAlertSnooze') && !app.includes('enableNotificati
 assert(!html.includes('lucide@latest') && html.includes('./lucide.min.js'), 'Lucide must be pinned and local');
 assert(worker.includes('./lucide.min.js'), 'Offline cache must include local Lucide runtime');
 assert(manifest.lang === 'en' && manifest.dir === 'ltr', 'App manifest must use English as default');
+assert(Array.isArray(manifest.icons) && manifest.icons.some(icon => icon.src === 'icons/smartnote-icon.svg'), 'PWA manifest must include the local app icon');
+assert(worker.includes('./icons/smartnote-icon.svg'), 'Offline cache must include the app icon');
 console.log('SmartNote reliability smoke checks passed.');
