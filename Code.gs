@@ -31,6 +31,7 @@ function doPost(e) {
     if (action === "admin_list") return withAdmin_(req.token, function () { return { ok: true, users: listUsers_() }; });
     if (action === "admin_create") return withAdmin_(req.token, function () { return { ok: true, user: createUser_(req) }; });
     if (action === "admin_status") return withAdmin_(req.token, function () { return { ok: true, updated: setUserStatus_(req.userId, req.status) }; });
+    if (action === "admin_role") return withAdmin_(req.token, function (admin) { return { ok: true, updated: setUserRole_(req.userId, req.role, admin.values[0]) }; });
     if (action === "admin_reset_password") return withAdmin_(req.token, function () { resetPassword_(req.userId, req.password); return { ok: true }; });
     if (action === "admin_delete") return withAdmin_(req.token, function () { deleteUser_(req.userId); return { ok: true }; });
     throw new Error("invalid_action");
@@ -188,4 +189,12 @@ function revokeUserSessions_(id) {
 function deleteUser_(id) {
   const u = findUserById_(String(id)); if (!u) throw new Error("user_not_found");
   users_().deleteRow(u.row); revokeUserSessions_(id);
+}
+
+function setUserRole_(id, role, adminId) {
+  if (!["admin", "user"].includes(role)) throw new Error("invalid_role");
+  const u = findUserById_(String(id)); if (!u) throw new Error("user_not_found");
+  if (String(id) === String(adminId)) throw new Error("cannot_change_own_role");
+  users_().getRange(u.row, 5).setValue(role);
+  return true;
 }
