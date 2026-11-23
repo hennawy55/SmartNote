@@ -83,7 +83,7 @@ function json_(obj) {
 }
 function safeError_(err) {
   const msg=String(err&&err.message||"server_error");
-  return /^(invalid_|same_assignee$|request_pending$|request_not_pending$|cannot_change_own_role$|cannot_delete_self$|unauthorized$|forbidden$|inactive_user$|username_exists$|bootstrap_disabled$|bootstrap_already_used$|weak_password$|user_not_found$|cannot_disable_self$|database_too_large$|database_not_configured$|user_has_active_assignments$|user_has_pending_requests$|user_manages_active_assignments$|operation_in_progress$|too_many_attempts$|server_error$)/.test(msg)?"server_error"===msg?msg:msg:"server_error";
+  return /^(invalid_|same_assignee$|request_pending$|request_not_pending$|request_stale$|cannot_change_own_role$|cannot_delete_self$|unauthorized$|forbidden$|inactive_user$|username_exists$|bootstrap_disabled$|bootstrap_already_used$|weak_password$|user_not_found$|cannot_disable_self$|database_too_large$|database_not_configured$|user_has_active_assignments$|user_has_pending_requests$|user_manages_active_assignments$|operation_in_progress$|too_many_attempts$|server_error$)/.test(msg)?"server_error"===msg?msg:msg:"server_error";
 }
 function book_() {
   const id = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID");
@@ -390,6 +390,13 @@ function canManageAssignment_(u,a){return isAdmin_(u)||String(a.OwnerLeaderID)==
 function canSeeAssignment_(u,a){return canManageAssignment_(u,a)||String(a.AssigneeID)===String(u.values[0]);}
 function assertAssignmentAccess_(u,a,manage){if(!a||(!canSeeAssignment_(u,a))||(manage&&!canManageAssignment_(u,a)))throw new Error("forbidden");}
 function activity_(id,u,action,details){activitySheet_().appendRow([Utilities.getUuid(),id,String(u.values[0]),String(u.values[1]),action,JSON.stringify(details||{}),new Date().toISOString()]);}
+function stalePendingReassignmentRequests_(assignmentId,actor){
+ const sh=requestSheet_(),rows=sh.getDataRange().getValues(),now=new Date().toISOString();
+ for(let i=1;i<rows.length;i++)if(String(rows[i][1])===String(assignmentId)&&String(rows[i][7])==="pending"){
+   sh.getRange(i+1,8,1,5).setValues([["stale",now,String(actor.values[0]),String(actor.values[1]),"assignment_changed"]]);
+   notify_(String(rows[i][2]),assignmentId,"reassignment_result","انتهى طلب إعادة الإسناد","تم تغيير مسؤول المتابعة قبل مراجعة الطلب.");
+ }
+}
 function notify_(userId,assignmentId,type,title,body){if(!userId)return;notificationSheet_().appendRow([Utilities.getUuid(),userId,assignmentId||"",type,title,body,false,new Date().toISOString(),""]);}
 function assignmentPublic_(a){const type=String(a.Type||"task"),clientName=String(a.ClientName||"");let title=String(a.Title||"");if(type==="client"){title=clientName||title.replace(/^متابعة عميل\s*:\s*/,"");}return {id:String(a.AssignmentID),title:title,description:String(a.Description||""),type:type,clientName:clientName,clientPhone:String(a.ClientPhone||""),status:String(a.Status||"new"),priority:String(a.Priority||"normal"),dueAt:String(a.DueAt||""),createdAt:String(a.CreatedAt||""),assignedAt:String(a.AssignedAt||""),updatedAt:String(a.UpdatedAt||""),createdBy:String(a.CreatedBy||""),createdByName:String(a.CreatedByName||""),ownerLeaderId:String(a.OwnerLeaderID||""),ownerLeaderName:String(a.OwnerLeaderName||""),assigneeId:String(a.AssigneeID||""),assigneeName:String(a.AssigneeName||""),archivedAt:String(a.ArchivedAt||""),viewedAt:String(a.ViewedAt||"")};}
 function listAssignments_(u){return assignmentRows_().filter(x=>canSeeAssignment_(u,x.data)).map(x=>assignmentPublic_(x.data));}
@@ -415,7 +422,7 @@ function reassignAssignment_(u,req){
  if(!target||String(target.values[5])!=="active"||String(target.values[0])===String(u.values[0])||(!isAdmin_(u)&&String(target.values[4])==="admin"))throw new Error("user_not_found");
  if(String(target.values[0])===String(a.AssigneeID))throw new Error("same_assignee");
  const previous=a.AssigneeName,previousId=a.AssigneeID,now=new Date().toISOString();a.AssigneeID=String(target.values[0]);a.AssigneeName=String(target.values[1]);a.AssignedAt=now;a.UpdatedAt=now;a.ViewedAt="";if(a.Status==="viewed")a.Status="new";
- assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>a[k])]);clearAssignmentCache_();
+ assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>a[k])]);clearAssignmentCache_();stalePendingReassignmentRequests_(a.AssignmentID,u);
  activity_(a.AssignmentID,u,"reassigned",{from:previous,to:a.AssigneeName});notify_(a.AssigneeID,a.AssignmentID,"assigned","متابعة جديدة",a.Title+" — تم إسناد متابعة إليك");notify_(String(previousId||""),a.AssignmentID,"reassigned","تم إعادة إسناد المتابعة",a.Title+" — تم إسنادها إلى "+a.AssigneeName);
  return assignmentPublic_(a);
  });
@@ -460,6 +467,7 @@ function reviewReassignment_(u,req){
  if(row<0)throw new Error("user_not_found");const x=assignmentById_(r[1]);if(!x)throw new Error("user_not_found");assertAssignmentAccess_(u,x.data,true);
  if(String(x.data.OwnerLeaderID)!==String(u.values[0])&&!isAdmin_(u))throw new Error("forbidden");
  if(String(r[7])!=="pending")throw new Error("request_not_pending");
+ if(String(r[2])!==String(x.data.AssigneeID)){sh.getRange(row,8,1,5).setValues([["stale",new Date().toISOString(),String(u.values[0]),String(u.values[1]),"assignee_changed"]]);activity_(x.data.AssignmentID,u,"reassignment_stale",{requestId:id});notify_(String(r[2]),x.data.AssignmentID,"reassignment_result","انتهى طلب إعادة الإسناد","تغير المسؤول الحالي قبل مراجعة الطلب.");throw new Error("request_stale");}
  const approve=req.approve===true,now=new Date().toISOString();let target=null;
  if(approve){target=findUserById_(String(r[4]));if(!target||String(target.values[5])!=="active")throw new Error("user_not_found");}
  // Validate the target before mutating either sheet row.
