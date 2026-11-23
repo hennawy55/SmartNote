@@ -205,8 +205,15 @@
     let gate=document.getElementById('loginGate');
     if(!gate){
       gate=document.createElement('div');gate.id='loginGate';gate.className='online-gate';gate.style.zIndex='10000';
-      gate.innerHTML='<div class="online-gate-card" style="max-width:430px"><div class="online-gate-icon">◆</div><h2 class="online-gate-title">تسجيل الدخول إلى SmartNote</h2><p class="online-gate-message">أدخل اسم المستخدم وكلمة المرور للمتابعة.</p><form id="loginForm" style="display:grid;gap:12px;text-align:right"><label>اسم المستخدم<input id="loginUsername" class="filter-input" autocomplete="username" required minlength="3"></label><label>كلمة المرور<input id="loginPassword" class="filter-input" type="password" autocomplete="current-password" required></label><p id="loginError" style="color:#b42318;margin:0"></p><button class="btn primary" type="submit">دخول</button></form></div>';
+      gate.innerHTML='<div class="online-gate-card" style="max-width:430px"><div class="online-gate-icon">◆</div><h2 class="online-gate-title">تسجيل الدخول إلى SmartNote</h2><p class="online-gate-message">أدخل اسم المستخدم وكلمة المرور للمتابعة.</p><form id="loginForm" style="display:grid;gap:12px;text-align:right"><label>اسم المستخدم<input id="loginUsername" class="filter-input" autocomplete="username" required minlength="3"></label><label>كلمة المرور<input id="loginPassword" class="filter-input" type="password" autocomplete="current-password" required></label><p id="loginError" style="color:#b42318;margin:0"></p><button class="btn primary" type="submit">دخول</button></form><button type="button" id="bootstrapAdminButton" class="btn" style="margin-top:12px;width:100%">إعداد حساب المدير لأول مرة</button></div>';
       document.body.appendChild(gate);
+      document.getElementById('bootstrapAdminButton').onclick=async()=>{
+        const bootstrapKey=prompt('أدخل مفتاح الإعداد الأولي الذي ستضعه في Script Properties باسم BOOTSTRAP_KEY:');if(!bootstrapKey)return;
+        const username=prompt('اختر اسم مستخدم المدير (3 أحرف على الأقل):');if(!username)return;
+        const password=prompt('اختر كلمة مرور قوية (10 أحرف على الأقل):');if(!password)return;
+        try{const result=await apiPost({action:'bootstrap',bootstrapKey,username,password});toast('تم إنشاء حساب المدير. سجّل الدخول الآن.');document.getElementById('loginUsername').value=username;document.getElementById('loginPassword').value=password}
+        catch(err){document.getElementById('loginError').textContent=err.message}
+      };
       document.getElementById('loginForm').addEventListener('submit',async e=>{
         e.preventDefault();const button=e.currentTarget.querySelector('button[type=submit]'),username=document.getElementById('loginUsername').value.trim(),password=document.getElementById('loginPassword').value;
         button.disabled=true;document.getElementById('loginError').textContent='جارٍ التحقق...';
