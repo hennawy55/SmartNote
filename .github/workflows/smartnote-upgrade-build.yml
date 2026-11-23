@@ -35,18 +35,28 @@ jobs:
           yes | "$SDKMANAGER" --licenses
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
       - name: Install dependencies
-        run: npm install
-      - name: Validate application JavaScript
+        run: npm install --no-audit --no-fund
+      - name: Download pinned Lucide runtime
+        run: |
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 \
+            https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js \
+            --output lucide.min.js
+          test -s lucide.min.js
+      - name: Validate application and backend JavaScript
         run: |
           node --check app.js
           node --check language.js
           node --check theme.js
+          cp Code.gs /tmp/smartnote-code.js
+          node --check /tmp/smartnote-code.js
+          node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8'))"
+          npm run test:smoke
       - name: Prepare Android web assets
         run: npm run prepare:android
       - name: Prepare web package
         run: |
           mkdir -p web-build
-          cp index.html app.js styles.css theme.js language.js manifest.json sw.js web-build/
+          cp index.html app.js styles.css theme.js language.js manifest.json sw.js lucide.min.js web-build/
           if [ -d icons ]; then cp -r icons web-build/icons; fi
           cd web-build
           zip -qr ../smartnote-upgrade-web.zip .
@@ -94,7 +104,17 @@ jobs:
           }
           JAVA
       - name: Build debug APK
-        run: cd android && chmod +x gradlew && ./gradlew assembleDebug
+        run: |
+          cd android
+          chmod +x gradlew
+          for attempt in 1 2 3; do
+            ./gradlew assembleDebug && exit 0
+            if [ "$attempt" -lt 3 ]; then
+              echo "Gradle dependency download/build failed; retrying in $((attempt * 20)) seconds..."
+              sleep $((attempt * 20))
+            fi
+          done
+          exit 1
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
