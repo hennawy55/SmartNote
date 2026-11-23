@@ -260,8 +260,9 @@
           finally{submit.disabled=false}
         };
         panel.querySelector('#adminUsersList').addEventListener('click',async e=>{
-          const button=e.target.closest('button[data-admin-action]');if(!button)return;
+          const button=e.target.closest('button[data-admin-action]');if(!button||button.disabled)return;
           const row=button.closest('[data-user-row]'),userId=row?.dataset.userRow;if(!userId)return;
+          button.disabled=true;
           try{
             if(button.dataset.adminAction==='status'){await apiPost({action:'admin_status',userId,status:button.dataset.status});toast('تم تحديث حالة الحساب')}
             if(button.dataset.adminAction==='role'){await apiPost({action:'admin_role',userId,role:row.querySelector('[data-role-select]').value});toast('تم تحديث صلاحية المستخدم')}
@@ -269,6 +270,7 @@
             if(button.dataset.adminAction==='delete'){if(!window.confirm(window.appTranslate?.('هل تريد حذف هذا المستخدم؟ لا يمكن التراجع عن هذه العملية.')||'هل تريد حذف هذا المستخدم؟ لا يمكن التراجع عن هذه العملية.'))return;await apiPost({action:'admin_delete',userId});toast('تم حذف المستخدم بنجاح')}
             await openAdminPanel();
           }catch(err){toast(err.message==='cannot_change_own_role'?'لا يمكن تغيير صلاحيتك من هذه الشاشة':err.message==='weak_password'?'كلمة المرور يجب ألا تقل عن 10 أحرف':err.message)}
+          finally{if(button.isConnected)button.disabled=false}
         });
       }
       panel.querySelector('#adminUsersList').innerHTML=data.users.map(u=>'<article class="admin-user-card" data-user-row="'+esc(u.id)+'"><div class="admin-user-top"><div class="admin-avatar"><i data-lucide="user-round"></i></div><div class="admin-user-identity"><strong>'+esc(u.username)+'</strong><small>'+ (u.role==='admin'?'مدير النظام':u.role==='leader'?'موزع':'مستخدم') +' · '+(u.status==='active'?'نشط':'معطل')+'</small></div><span class="admin-status '+(u.status==='active'?'is-active':'is-disabled')+'">'+(u.status==='active'?'نشط':'معطل')+'</span></div><div class="admin-user-controls"><label><span>الصلاحية</span><select class="filter-input" data-role-select><option value="user" '+(u.role==='user'?'selected':'')+'>مستخدم</option><option value="leader" '+(u.role==='leader'?'selected':'')+'>موزع</option><option value="admin" '+(u.role==='admin'?'selected':'')+'>مدير</option></select></label><button class="btn small" data-admin-action="role" type="button">حفظ الصلاحية</button><button class="btn small" data-admin-action="status" data-status="'+(u.status==='active'?'disabled':'active')+'" type="button">'+(u.status==='active'?'تعطيل الحساب':'تفعيل الحساب')+'</button></div><div class="admin-password-row"><input class="filter-input" data-new-user-password type="password" minlength="10" placeholder="كلمة مرور جديدة (10 أحرف على الأقل)" autocomplete="new-password"><button class="btn small" data-admin-action="password" type="button"><i data-lucide="key-round"></i> تغيير كلمة المرور</button></div>'+(u.id!==currentUser?.id?'<div class="admin-user-delete"><button class="btn danger small" data-admin-action="delete" type="button">حذف المستخدم</button></div>':'')+'</article>').join('')||'<div class="admin-empty">لا يوجد مستخدمون حتى الآن.</div>';
@@ -436,7 +438,7 @@
   // Alert action handlers are attached directly in renderTaskAlerts for reliable Android WebView taps.
   document.addEventListener('click',event=>{if(!event.target.closest('.notification-center')){document.getElementById('notificationPanel').hidden=true;document.getElementById('notificationBell').setAttribute('aria-expanded','false')}});
   navigator.serviceWorker?.addEventListener('message',event=>{if(event.data?.type==='OPEN_TASK_NOTIFICATION'&&typeof event.data.taskId==='string'){const alert=taskAlerts.find(x=>x.key===event.data.key);if(alert){alert.isRead=true;persistTaskAlertState();renderTaskAlerts()}showView('tasks');if(get('tasks',event.data.taskId))openForm('task',event.data.taskId)}});
-  window.addEventListener('smartnote-open-task',event=>{const taskId=event.detail?.taskId;if(typeof taskId==='string'){showView('tasks');if(get('tasks',taskId))openForm('task',taskId)}});
+  window.addEventListener('smartnote-open-task',event=>{const taskId=event.detail?.taskId;if(typeof taskId==='string'){const alert=taskAlerts.find(x=>x.key===event.detail?.key);if(alert){alert.isRead=true;persistTaskAlertState();renderTaskAlerts()}showView('tasks');if(get('tasks',taskId))openForm('task',taskId)}});
   function handleAppBack(){
     const modal=document.querySelector('.modal-backdrop.show');if(modal){modal.classList.remove('show');editing=null;return}
     const notificationPanel=document.getElementById('notificationPanel');if(notificationPanel&&!notificationPanel.hidden){notificationPanel.hidden=true;document.getElementById('notificationBell').setAttribute('aria-expanded','false');return}
