@@ -21,6 +21,7 @@ assert(backend.includes('isLastActiveAdmin_') && backend.includes('last_active_a
 assert(backend.includes('function reviewReassignment_') && backend.includes('Validate the target before mutating'), 'Reassignment review must validate target before writing');
 assert(backend.includes('stalePendingReassignmentRequests_') && backend.includes('request_stale'), 'Ownership changes must invalidate stale reassignment requests');
 assert(backend.includes('function assignmentHistory_'), 'History must have a dedicated authorized endpoint');
+assert(backend.includes('assignment_archived_list') && app.includes('assignmentArchiveButton'), 'Managers must be able to archive and restore follow-ups');
 assert(backend.includes('Users_backup_'), 'User schema migration must create a backup first');
 assert(backend.includes('too_many_attempts'), 'Login attempts must be throttled');
 assert(backend.includes('function getInitialAdminCredentials') && !backend.includes('1234567890'), 'New databases must not use a hardcoded default admin password');
