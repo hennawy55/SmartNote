@@ -363,8 +363,9 @@ function resetPassword_(id,password,actor) {
 function changeOwnPassword_(u,oldPassword,newPassword,currentToken){
  return withScriptLock_(function(){
   if(!validPassword_(newPassword))throw new Error("weak_password");
-  if(hashPassword_(String(oldPassword||""),String(u.values[3]))!==String(u.values[2]))throw new Error("unauthorized");
-  const salt=randomHex_(16),sh=users_();sh.getRange(u.row,3,1,2).setValues([[hashPassword_(newPassword,salt),salt]]);sh.getRange(u.row,8).setValue(false);sh.getRange(u.row,7).setValue(new Date().toISOString());if(String(u.values[4])==="admin")PropertiesService.getScriptProperties().deleteProperty("INITIAL_ADMIN_PASSWORD");revokeUserSessionsExcept_(String(u.values[0]),currentToken);audit_(u,"password_changed",String(u.values[0]),{otherSessionsRevoked:true},"success");return true;
+  const actual=findUserById_(String(u.values[0]));if(!actual)throw new Error("user_not_found");
+  if(hashPassword_(String(oldPassword||""),String(actual.values[3]))!==String(actual.values[2]))throw new Error("unauthorized");
+  const salt=randomHex_(16),sh=users_();sh.getRange(actual.row,3,1,2).setValues([[hashPassword_(newPassword,salt),salt]]);sh.getRange(actual.row,8).setValue(false);sh.getRange(actual.row,7).setValue(new Date().toISOString());if(String(actual.values[4])==="admin")PropertiesService.getScriptProperties().deleteProperty("INITIAL_ADMIN_PASSWORD");revokeUserSessionsExcept_(String(actual.values[0]),currentToken);audit_(actual,"password_changed",String(actual.values[0]),{otherSessionsRevoked:true},"success");return true;
  });
 }
 function revokeUserSessions_(id) {
