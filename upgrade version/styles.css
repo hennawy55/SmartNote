@@ -312,3 +312,33 @@ html[dir="ltr"] .admin-password-row{direction:ltr}
   html[dir="ltr"] .admin-users-list,
   html[dir="ltr"] .admin-user-controls{direction:ltr}
 }
+
+/* Native assigned follow-ups section: inherits the notebook's cards, filters and status groups. */
+.welcome-user{margin:0 0 4px;color:var(--blue);font-size:12px;font-weight:700}
+.assigned-card{display:grid;gap:10px}
+.assigned-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.assigned-card-head>div{min-width:0;flex:1}
+.assigned-card-head h3{margin:0 0 6px;font-size:14px}
+.assigned-card-head p{margin:0;color:var(--muted);font-size:11px;line-height:1.65;white-space:pre-wrap}
+.assigned-meta{display:flex;flex-wrap:wrap;gap:8px 16px;color:var(--muted);font-size:10px}
+.assigned-status-select{max-width:150px;min-width:110px;height:36px}
+.assignment-detail-panel{margin-top:18px;display:grid;gap:13px;scroll-margin-top:16px}
+.assignment-detail-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.assignment-detail-grid>div{display:grid;gap:5px;padding:11px;border:1px solid var(--line);border-radius:11px;background:var(--panel2)}
+.assignment-detail-grid small,.assignment-history small{color:var(--muted);font-size:10px}
+.assignment-detail-panel h3{margin:8px 0 0;font-size:13px}
+.assignment-history{display:grid;gap:7px}
+.assignment-history p,.assignment-notes p{margin:0;padding:10px;border:1px solid var(--line);border-radius:10px;font-size:11px}
+.assignment-history small{display:block;margin-top:5px}
+.assignment-note-form{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:13px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)}
+.assignment-note-form label{display:grid;gap:6px;font-size:11px}
+.assignment-note-form textarea,.assignment-note-form select{width:100%;min-height:40px;padding:9px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--text)}
+.assignment-note-form textarea{min-height:76px}
+.assignment-note-form button{align-self:end}
+.assignment-request{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:11px;border:1px solid var(--line);border-radius:10px}
+.unified-notice-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.unified-notice-head h3{margin:0}
+.unread-dot{width:8px;height:8px;border-radius:50%;background:var(--blue);flex:none}
+.task-alert.is-unread{border-inline-start:3px solid var(--blue);background:var(--panel2)}
+.task-alert.is-read{opacity:.82}
+@media(max-width:700px){.assignment-detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.assignment-note-form{grid-template-columns:1fr}.assigned-card .card-actions{display:grid;grid-template-columns:1fr 1fr}.assigned-card .card-actions button:first-child{grid-column:1/-1}.assigned-status-select{max-width:none;width:100%}.mobile-nav{grid-template-columns:repeat(8,minmax(0,1fr))}.mobile-nav button{font-size:7px}.mobile-nav button span:first-child{font-size:17px}}
