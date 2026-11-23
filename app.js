@@ -204,23 +204,17 @@
     isReady=false;document.getElementById('onlineGate').style.display='none';
     let gate=document.getElementById('loginGate');
     if(!gate){
-      gate=document.createElement('div');gate.id='loginGate';gate.className='online-gate';gate.style.zIndex='10000';
-      gate.innerHTML='<div class="online-gate-card" style="max-width:430px"><div class="online-gate-icon">◆</div><h2 class="online-gate-title">تسجيل الدخول إلى SmartNote</h2><p class="online-gate-message">أدخل اسم المستخدم وكلمة المرور للمتابعة.</p><form id="loginForm" style="display:grid;gap:12px;text-align:right"><label>اسم المستخدم<input id="loginUsername" class="filter-input" autocomplete="username" required minlength="3"></label><label>كلمة المرور<input id="loginPassword" class="filter-input" type="password" autocomplete="current-password" required></label><p id="loginError" style="color:#b42318;margin:0"></p><button class="btn primary" type="submit">دخول</button></form><button type="button" id="bootstrapAdminButton" class="btn" style="margin-top:12px;width:100%">إعداد حساب المدير لأول مرة</button></div>';
+      gate=document.createElement('div');gate.id='loginGate';gate.className='online-gate login-gate';gate.style.zIndex='10000';
+      gate.innerHTML='<div class="online-gate-card login-card"><div class="login-brand"><span class="login-brand-mark"><i data-lucide="building-2"></i></span><span><strong>SmartNote</strong><small>دفتر العقارات الذكي</small></span></div><div class="login-heading"><h2 class="online-gate-title">مرحباً بعودتك</h2><p class="online-gate-message">سجّل الدخول للوصول إلى بياناتك ومساحات عملك.</p></div><form id="loginForm" class="login-form"><label class="login-field"><span>اسم المستخدم</span><span class="login-input-wrap"><i data-lucide="user-round"></i><input id="loginUsername" autocomplete="username" placeholder="أدخل اسم المستخدم" required minlength="3"></span></label><label class="login-field"><span>كلمة المرور</span><span class="login-input-wrap"><i data-lucide="lock-keyhole"></i><input id="loginPassword" type="password" autocomplete="current-password" placeholder="أدخل كلمة المرور" required></span></label><p id="loginError" class="login-error" role="alert"></p><button class="btn primary login-submit" type="submit"><span>تسجيل الدخول</span><i data-lucide="arrow-left"></i></button></form><p class="login-footnote"><i data-lucide="shield-check"></i> بياناتك محفوظة بشكل مستقل وآمن</p></div>';
       document.body.appendChild(gate);
-      document.getElementById('bootstrapAdminButton').onclick=async()=>{
-        const bootstrapKey=prompt('أدخل مفتاح الإعداد الأولي الذي ستضعه في Script Properties باسم BOOTSTRAP_KEY:');if(!bootstrapKey)return;
-        const username=prompt('اختر اسم مستخدم المدير (3 أحرف على الأقل):');if(!username)return;
-        const password=prompt('اختر كلمة مرور قوية (10 أحرف على الأقل):');if(!password)return;
-        try{const result=await apiPost({action:'bootstrap',bootstrapKey,username,password});toast('تم إنشاء حساب المدير. سجّل الدخول الآن.');document.getElementById('loginUsername').value=username;document.getElementById('loginPassword').value=password}
-        catch(err){document.getElementById('loginError').textContent=err.message}
-      };
       document.getElementById('loginForm').addEventListener('submit',async e=>{
         e.preventDefault();const button=e.currentTarget.querySelector('button[type=submit]'),username=document.getElementById('loginUsername').value.trim(),password=document.getElementById('loginPassword').value;
-        button.disabled=true;document.getElementById('loginError').textContent='جارٍ التحقق...';
+        button.disabled=true;button.classList.add('is-loading');document.getElementById('loginError').textContent='جارٍ التحقق من بيانات الدخول...';
         try{const result=await apiPost({action:'login',username,password});authToken=result.token;currentUser=result.user;sessionStorage.setItem(SESSION_KEY,JSON.stringify({token:authToken,user:currentUser}));await afterLogin()}
         catch(err){document.getElementById('loginError').textContent=err.message==='unauthorized'?'اسم المستخدم أو كلمة المرور غير صحيحة':err.message}
-        finally{button.disabled=false}
+        finally{button.disabled=false;button.classList.remove('is-loading')}
       });
+      if(window.lucide)window.lucide.createIcons({attrs:{'stroke-width':1.8}});
     }
     gate.style.display='flex';document.getElementById('loginError').textContent=message;
   }
@@ -237,13 +231,34 @@
   async function openAdminPanel(){
     try{
       const data=await apiPost({action:'admin_list'});let panel=document.getElementById('adminPanel');
-      if(!panel){panel=document.createElement('div');panel.id='adminPanel';panel.className='online-gate';panel.style.zIndex='10001';panel.innerHTML='<div class="online-gate-card" style="max-width:650px;max-height:85vh;overflow:auto"><h2>إدارة المستخدمين</h2><form id="createUserForm" style="display:grid;gap:8px;text-align:right"><input id="newUsername" class="filter-input" placeholder="اسم المستخدم" required minlength="3"><input id="newPassword" class="filter-input" type="password" placeholder="كلمة المرور (10 أحرف على الأقل)" required minlength="10"><button class="btn primary">إضافة مستخدم</button></form><div id="adminUsersList" style="display:grid;gap:8px;margin-top:16px"></div><button class="btn" id="closeAdminPanel">إغلاق</button></div>';document.body.appendChild(panel);
+      if(!panel){
+        panel=document.createElement('div');panel.id='adminPanel';panel.className='online-gate admin-gate';panel.style.zIndex='10001';
+        panel.innerHTML='<section class="admin-shell"><header class="admin-header"><div><span class="admin-eyebrow">SMARTNOTE CONTROL CENTER</span><h2><i data-lucide="users-round"></i> إدارة المستخدمين</h2><p>إنشاء الحسابات والتحكم في الصلاحيات وكلمات المرور.</p></div><button class="btn icon-btn" id="closeAdminPanel" type="button" aria-label="إغلاق"><i data-lucide="x"></i></button></header><form id="createUserForm" class="admin-create-form"><div class="admin-create-title"><i data-lucide="user-plus"></i><strong>إضافة مستخدم جديد</strong></div><label><span>اسم المستخدم</span><input id="newUsername" class="filter-input" placeholder="مثال: ahmed123" required minlength="3" autocomplete="off"></label><label><span>كلمة المرور</span><input id="newPassword" class="filter-input" type="password" placeholder="10 أحرف على الأقل" required minlength="10" autocomplete="new-password"></label><button class="btn primary" type="submit"><i data-lucide="plus"></i> إنشاء الحساب</button></form><div class="admin-list-heading"><div><h3>الحسابات المسجلة</h3><p id="adminUsersCount">إدارة حسابات النظام</p></div><span class="admin-count" id="adminCountBadge">0</span></div><div id="adminUsersList" class="admin-users-list"></div><footer class="admin-footer"><span>تغييرات الصلاحيات وكلمات المرور تُطبق فوراً.</span><button class="btn" id="adminDone" type="button">تم</button></footer></section>';
+        document.body.appendChild(panel);
         panel.querySelector('#closeAdminPanel').onclick=()=>panel.style.display='none';
-        panel.querySelector('#createUserForm').onsubmit=async e=>{e.preventDefault();try{await apiPost({action:'admin_create',username:panel.querySelector('#newUsername').value,password:panel.querySelector('#newPassword').value});panel.querySelector('#newUsername').value='';panel.querySelector('#newPassword').value='';await openAdminPanel()}catch(err){toast(err.message)}};
+        panel.querySelector('#adminDone').onclick=()=>panel.style.display='none';
+        panel.addEventListener('click',e=>{if(e.target===panel)panel.style.display='none'});
+        panel.querySelector('#createUserForm').onsubmit=async e=>{
+          e.preventDefault();const submit=panel.querySelector('#createUserForm button[type=submit]');submit.disabled=true;
+          try{await apiPost({action:'admin_create',username:panel.querySelector('#newUsername').value.trim(),password:panel.querySelector('#newPassword').value});panel.querySelector('#newUsername').value='';panel.querySelector('#newPassword').value='';toast('تم إنشاء المستخدم بنجاح');await openAdminPanel()}
+          catch(err){toast(err.message==='username_exists'?'اسم المستخدم مستخدم بالفعل':err.message==='weak_password'?'كلمة المرور يجب ألا تقل عن 10 أحرف':err.message)}
+          finally{submit.disabled=false}
+        };
+        panel.querySelector('#adminUsersList').addEventListener('click',async e=>{
+          const button=e.target.closest('button[data-admin-action]');if(!button)return;
+          const row=button.closest('[data-user-row]'),userId=row?.dataset.userRow;if(!userId)return;
+          try{
+            if(button.dataset.adminAction==='status'){await apiPost({action:'admin_status',userId,status:button.dataset.status});toast('تم تحديث حالة الحساب')}
+            if(button.dataset.adminAction==='role'){await apiPost({action:'admin_role',userId,role:row.querySelector('[data-role-select]').value});toast('تم تحديث صلاحية المستخدم')}
+            if(button.dataset.adminAction==='password'){const password=row.querySelector('[data-new-user-password]').value;if(password.length<10){toast('كلمة المرور يجب ألا تقل عن 10 أحرف');return}await apiPost({action:'admin_reset_password',userId,password});row.querySelector('[data-new-user-password]').value='';toast('تم تغيير كلمة المرور وإغلاق الجلسات السابقة')}
+            await openAdminPanel();
+          }catch(err){toast(err.message==='cannot_change_own_role'?'لا يمكن تغيير صلاحيتك من هذه الشاشة':err.message==='weak_password'?'كلمة المرور يجب ألا تقل عن 10 أحرف':err.message)}
+        });
       }
-      panel.querySelector('#adminUsersList').innerHTML=data.users.map(u=>'<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;border-bottom:1px solid #ddd;padding:8px"><span>'+esc(u.username)+' — '+esc(u.status)+'</span><button class="btn small" data-user-id="'+esc(u.id)+'" data-user-status="'+(u.status==='active'?'disabled':'active')+'">'+(u.status==='active'?'تعطيل':'تفعيل')+'</button></div>').join('');
-      panel.querySelectorAll('[data-user-id]').forEach(b=>b.onclick=async()=>{try{await apiPost({action:'admin_status',userId:b.dataset.userId,status:b.dataset.userStatus});await openAdminPanel()}catch(err){toast(err.message)}});
-      panel.style.display='flex';
+      panel.querySelector('#adminUsersList').innerHTML=data.users.map(u=>'<article class="admin-user-card" data-user-row="'+esc(u.id)+'"><div class="admin-user-top"><div class="admin-avatar"><i data-lucide="user-round"></i></div><div class="admin-user-identity"><strong>'+esc(u.username)+'</strong><small>'+ (u.role==='admin'?'مدير النظام':'مستخدم') +' · '+(u.status==='active'?'نشط':'معطل')+'</small></div><span class="admin-status '+(u.status==='active'?'is-active':'is-disabled')+'">'+(u.status==='active'?'نشط':'معطل')+'</span></div><div class="admin-user-controls"><label><span>الصلاحية</span><select class="filter-input" data-role-select><option value="user" '+(u.role==='user'?'selected':'')+'>مستخدم</option><option value="admin" '+(u.role==='admin'?'selected':'')+'>مدير</option></select></label><button class="btn small" data-admin-action="role" type="button">حفظ الصلاحية</button><button class="btn small" data-admin-action="status" data-status="'+(u.status==='active'?'disabled':'active')+'" type="button">'+(u.status==='active'?'تعطيل الحساب':'تفعيل الحساب')+'</button></div><div class="admin-password-row"><input class="filter-input" data-new-user-password type="password" minlength="10" placeholder="كلمة مرور جديدة (10 أحرف على الأقل)" autocomplete="new-password"><button class="btn small" data-admin-action="password" type="button"><i data-lucide="key-round"></i> تغيير كلمة المرور</button></div></article>').join('')||'<div class="admin-empty">لا يوجد مستخدمون حتى الآن.</div>';
+      panel.querySelector('#adminUsersCount').textContent='إجمالي الحسابات: '+data.users.length;
+      panel.querySelector('#adminCountBadge').textContent=String(data.users.length);
+      panel.style.display='flex';if(window.lucide)window.lucide.createIcons({attrs:{'stroke-width':1.8}});
     }catch(err){toast('تعذر فتح إدارة المستخدمين: '+err.message)}
   }
   async function initializeCloud(){
