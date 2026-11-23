@@ -218,8 +218,8 @@
     }
     gate.style.display='flex';document.getElementById('loginError').textContent=message;
   }
-  async function afterLogin(){
-    const result=await apiPost({action:'load'});db=normalizeDatabase(result.data||{});isReady=true;localRevision=0;renderAll();syncNativeTaskReminders();document.getElementById('loginGate').style.display='none';hideGate();setConnection(true,'تم تسجيل الدخول؛ المزامنة كل 5 ثوانٍ.');
+  async function afterLogin(preloadedData){
+    const result=preloadedData&&typeof preloadedData==='object'?{data:preloadedData}:await apiPost({action:'load'});db=normalizeDatabase(result.data||{});isReady=true;localRevision=0;renderAll();syncNativeTaskReminders();document.getElementById('loginGate').style.display='none';hideGate();setConnection(true,'تم تسجيل الدخول؛ المزامنة كل 5 ثوانٍ.');
     if(currentUser?.role==='admin') addAdminButton();
     if(!document.getElementById('logoutButton')){const b=document.createElement('button');b.id='logoutButton';b.className='btn small';b.textContent='تسجيل الخروج';b.onclick=async()=>{try{await apiPost({action:'logout'})}catch(_){}authToken='';currentUser=null;isReady=false;localStorage.removeItem(SESSION_KEY);showLogin('تم تسجيل الخروج.');document.getElementById('adminUsersButton')?.remove();b.remove()};document.querySelector('.top-actions').prepend(b)}
 
@@ -302,7 +302,7 @@
   document.addEventListener('pointerdown',unlockNotificationAudio,{once:true});
   document.addEventListener('keydown',unlockNotificationAudio,{once:true});
   window.addEventListener('online',()=>initializeCloud());
-  window.addEventListener('offline',()=>{isReady=false;setConnection(false,'انقطع اتصال الإنترنت.');showLogin('انقطع اتصال الإنترنت. أعد الاتصال ثم سجّل الدخول مجدداً.')});
+  window.addEventListener('offline',()=>{setConnection(false,'انقطع اتصال الإنترنت. ستتم إعادة المزامنة تلقائياً عند عودة الاتصال.')});
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){syncCloud();checkTaskNotifications()}});
   setInterval(syncCloud,5000);
   setInterval(checkTaskNotifications,15000);
