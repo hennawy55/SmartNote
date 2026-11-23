@@ -1,0 +1,22 @@
+const fs = require('fs');
+const assert = require('assert');
+const read = name => fs.readFileSync(name, 'utf8');
+const app = read('app.js');
+const backend = read('Code.gs');
+const html = read('index.html');
+const manifest = JSON.parse(read('manifest.json'));
+const worker = read('sw.js');
+
+assert(app.includes("action:'assignment_history'"), 'Activity history must load on demand');
+assert(app.includes("action:'assignment_targets'"), 'Transferred assignment owner must have scoped reassignment targets');
+assert(app.includes("action:'reassignment_targets'"), 'Assignee reassignment request must use a scoped endpoint');
+assert(app.includes("Date.now()-lastVisibleSyncAt>=30000"), 'Cloud polling must be throttled to 30 seconds');
+assert(backend.includes('function sessionUser_') && backend.includes('cache.get(key)'), 'Session cache must be used');
+assert(backend.includes('function withScriptLock_'), 'Mutating operations must use a server lock');
+assert(backend.includes('user_has_active_assignments'), 'Deleting users with active assignments must be blocked');
+assert(backend.includes('function reviewReassignment_') && backend.includes('Validate the target before mutating'), 'Reassignment review must validate target before writing');
+assert(backend.includes('function assignmentHistory_'), 'History must have a dedicated authorized endpoint');
+assert(!html.includes('lucide@latest') && html.includes('./lucide.min.js'), 'Lucide must be pinned and local');
+assert(worker.includes('./lucide.min.js'), 'Offline cache must include local Lucide runtime');
+assert(manifest.lang === 'en' && manifest.dir === 'ltr', 'App manifest must use English as default');
+console.log('SmartNote reliability smoke checks passed.');
