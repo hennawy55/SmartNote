@@ -429,8 +429,8 @@ function createAssignment_(u,req){
  if(!isAdmin_(u)&&!isLeader_(u))throw new Error("forbidden");
  const type=req.assignmentType==="client"?"client":"task",clientName=String(req.clientName||"").trim(),clientPhone=String(req.clientPhone||"").trim();
  const title=(type==="client"?clientName:String(req.title||"").trim());if(!title||title.length>180)throw new Error("invalid_title");
- if(type==="client"&&!clientName)throw new Error("invalid_client_name");
- const target=findUserById_(String(req.assigneeId||""));if(!target||String(target.values[5])!=="active"||(isLeader_(u)&&String(target.values[4])==="admin"))throw new Error("user_not_found");
+ if(type==="client"&&(!clientName||!clientPhone||clientPhone.length>30))throw new Error("invalid_client_phone");
+ const target=findUserById_(String(req.assigneeId||""));if(!target||String(target.values[5])!=="active"||String(target.values[0])===String(u.values[0])||(isLeader_(u)&&String(target.values[4])==="admin"))throw new Error("user_not_found");
  const id=Utilities.getUuid(),now=new Date().toISOString(),ownerId=String(u.values[0]),ownerName=String(u.values[1]);
  const a={AssignmentID:id,Title:title,Description:String(req.description||"").slice(0,5000),Status:"new",Priority:["low","normal","high","urgent"].includes(req.priority)?req.priority:"normal",DueAt:String(req.dueAt||""),CreatedAt:now,AssignedAt:now,UpdatedAt:now,CreatedBy:ownerId,CreatedByName:ownerName,OwnerLeaderID:ownerId,OwnerLeaderName:ownerName,AssigneeID:String(target.values[0]),AssigneeName:String(target.values[1]),ArchivedAt:"",ViewedAt:"",Type:type,ClientName:type==="client"?clientName:"",ClientPhone:type==="client"?clientPhone:""};
  assignmentSheet_().appendRow(UPGRADE_SHEETS.Assignments.map(k=>a[k]));clearAssignmentCache_();activity_(id,u,"created",{assignee:a.AssigneeName});notify_(a.AssigneeID,id,"assigned","متابعة جديدة",title+" — تم إسناد متابعة إليك");
