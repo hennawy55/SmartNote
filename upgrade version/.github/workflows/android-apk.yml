@@ -4,21 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'index.html'
-      - 'app.js'
-      - 'styles.css'
-      - 'theme.js'
-      - 'language.js'
-      - 'manifest.json'
-      - 'sw.js'
-      - 'android-notifications.js'
-      - 'android-back.js'
-      - 'icons/**'
-      - 'tests/**'
-      - 'Code.gs'
-      - 'package.json'
-      - 'capacitor.config.ts'
-      - '.github/workflows/android-apk.yml'
+      - 'upgrade version/**'
 
 jobs:
   build:
@@ -26,6 +12,9 @@ jobs:
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    defaults:
+      run:
+        working-directory: upgrade version
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -65,7 +54,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: smartnote-web-build
-          path: web-build/
+          path: upgrade version/web-build/
           if-no-files-found: error
       - name: Create Android project
         run: npx cap add android
@@ -129,5 +118,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: smartnote-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: upgrade version/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
