@@ -21,7 +21,7 @@ function doPost(e) {
     if (action === "bootstrap") return bootstrap_(req);
     if (action === "login") return login_(req);
     if (action === "logout") return logout_(req);
-    if (action === "me") return withSession_(req.token, function (user) { return { ok: true, user: publicUser_(user) }; });
+    if (action === "me") return withSession_(req.token, function (user) { return { ok: true, user: publicUser_(user), data: readDatabase_(user.row) }; });
     if (action === "load") return withSession_(req.token, function (user) { return { ok: true, data: readDatabase_(user.row) }; });
     if (action === "save") return withSession_(req.token, function (user) {
       if (!req.data || typeof req.data !== "object" || Array.isArray(req.data)) throw new Error("invalid_data");
