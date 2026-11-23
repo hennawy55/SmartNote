@@ -1,0 +1,118 @@
+name: Build Android APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - 'app.js'
+      - 'styles.css'
+      - 'theme.js'
+      - 'language.js'
+      - 'manifest.json'
+      - 'sw.js'
+      - 'android-notifications.js'
+      - 'package.json'
+      - 'capacitor.config.ts'
+      - '.github/workflows/android-apk.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Android SDK packages
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
+          if [ -z "$SDKMANAGER" ]; then echo "Android sdkmanager not found under $ANDROID_HOME"; exit 1; fi
+          yes | "$SDKMANAGER" --licenses
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+      - name: Install dependencies
+        run: npm install
+      - name: Prepare web assets and bundle native notification bridge
+        run: npm run prepare:android
+      - name: Prepare standalone web build
+        run: |
+          mkdir -p web-build
+          cp index.html app.js styles.css theme.js language.js manifest.json sw.js web-build/
+          if [ -d icons ]; then cp -r icons web-build/icons; fi
+      - name: Upload web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartnote-web-build
+          path: web-build/
+          if-no-files-found: error
+      - name: Create Android project
+        run: npx cap add android
+      - name: Sync Capacitor plugins
+        run: npx cap sync android
+      - name: Keep Android app below system bars
+        run: |
+          # Android 15 enforces edge-to-edge for target SDK 35. Keep this sideloaded build
+          # at target 34 so the status/navigation bars remain separate from app content.
+          if grep -q 'targetSdkVersion = 35' android/variables.gradle; then
+            sed -i 's/targetSdkVersion = 35/targetSdkVersion = 34/' android/variables.gradle
+          fi
+          if grep -q 'targetSdkVersion = 36' android/variables.gradle; then
+            sed -i 's/targetSdkVersion = 36/targetSdkVersion = 34/' android/variables.gradle
+          fi
+      - name: Disable immersive full-screen and keep system bars visible
+        run: |
+          MAIN_ACTIVITY="android/app/src/main/java/com/hennawy55/smartnote/MainActivity.java"
+          cat > "$MAIN_ACTIVITY" <<'JAVA'
+          package com.hennawy55.smartnote;
+
+          import android.graphics.Color;
+          import android.os.Bundle;
+          import android.view.View;
+          import android.view.WindowManager;
+          import androidx.core.view.WindowCompat;
+          import androidx.core.view.WindowInsetsCompat;
+          import androidx.core.view.WindowInsetsControllerCompat;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+            @Override
+            public void onCreate(Bundle savedInstanceState) {
+              super.onCreate(savedInstanceState);
+
+              // Keep Android status and navigation bars visible (non-immersive app).
+              getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+              getWindow().addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+              WindowCompat.setDecorFitsSystemWindows(getWindow(), true);
+              getWindow().setStatusBarColor(Color.rgb(250, 247, 244));
+              getWindow().setNavigationBarColor(Color.rgb(250, 247, 244));
+              getWindow().setNavigationBarDividerColor(Color.rgb(225, 218, 213));
+
+              View decor = getWindow().getDecorView();
+              decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+              WindowInsetsControllerCompat controller =
+                  WindowCompat.getInsetsController(getWindow(), decor);
+              controller.setSystemBarsBehavior(
+                  WindowInsetsControllerCompat.BEHAVIOR_DEFAULT);
+              controller.show(WindowInsetsCompat.Type.statusBars()
+                  | WindowInsetsCompat.Type.navigationBars());
+            }
+          }
+          JAVA
+      - name: Build debug APK
+        run: cd android && chmod +x gradlew && ./gradlew assembleDebug
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartnote-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
