@@ -107,18 +107,38 @@ function login_(req) {
   const username = cleanUsername_(req.username), found = findUser_(username);
   if (!found || String(found.values[5]) !== "active" || hashPassword_(String(req.password || ""), String(found.values[3])) !== String(found.values[2])) throw new Error("unauthorized");
   const token = randomHex_(32), sh = sessions_(), now = new Date(), expiry = new Date(now.getTime() + SESSION_DAYS * 86400000);
-  sh.appendRow([hashToken_(token), String(found.values[0]), expiry.toISOString(), now.toISOString()]);
+  const tokenHash = hashToken_(token), expiresAt = expiry.toISOString();
+  sh.appendRow([tokenHash, String(found.values[0]), expiresAt, now.toISOString()]);
+  cacheSession_(tokenHash, found, expiresAt);
   return json_({ ok: true, token: token, user: publicUser_(found) });
+}
+function sessionCacheKey_(tokenHash) { return "smartnote_session_" + tokenHash; }
+function cacheSession_(tokenHash, user, expiresAt) {
+  const seconds = Math.max(1, Math.min(21600, Math.floor((Date.parse(expiresAt) - Date.now()) / 1000)));
+  if (seconds > 0) CacheService.getScriptCache().put(sessionCacheKey_(tokenHash), JSON.stringify({ user: user, expiresAt: expiresAt }), seconds);
+}
+function clearSessionCache_(tokenHash) {
+  if (tokenHash) CacheService.getScriptCache().remove(sessionCacheKey_(tokenHash));
 }
 function hashToken_(token) { return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(token), Utilities.Charset.UTF_8)); }
 function sessionUser_(token) {
   if (!token || typeof token !== "string" || token.length < 32) throw new Error("unauthorized");
-  const sh = sessions_(), rows = sh.getDataRange().getValues(), wanted = hashToken_(token), now = Date.now();
+  const wanted = hashToken_(token), now = Date.now(), cache = CacheService.getScriptCache();
+  const cached = cache.get(sessionCacheKey_(wanted));
+  if (cached) {
+    try {
+      const item = JSON.parse(cached);
+      if (Date.parse(item.expiresAt) > now && item.user && String(item.user.values[5]) === "active") return item.user;
+      clearSessionCache_(wanted);
+    } catch (_) { clearSessionCache_(wanted); }
+  }
+  const sh = sessions_(), rows = sh.getDataRange().getValues();
   for (let i = rows.length - 1; i >= 1; i--) {
     if (String(rows[i][0]) !== wanted) continue;
-    if (Date.parse(rows[i][2]) <= now) { sh.deleteRow(i + 1); throw new Error("unauthorized"); }
+    if (Date.parse(rows[i][2]) <= now) { sh.deleteRow(i + 1); clearSessionCache_(wanted); throw new Error("unauthorized"); }
     const u = findUserById_(String(rows[i][1]));
-    if (!u || String(u.values[5]) !== "active") throw new Error("inactive_user");
+    if (!u || String(u.values[5]) !== "active") { clearSessionCache_(wanted); throw new Error("inactive_user"); }
+    cacheSession_(wanted, u, String(rows[i][2]));
     return u;
   }
   throw new Error("unauthorized");
@@ -173,7 +193,7 @@ function createUser_(req) {
 function setUserStatus_(id, status) {
   if (!["active", "disabled"].includes(status)) throw new Error("invalid_status");
   const u = findUserById_(String(id)); if (!u) throw new Error("user_not_found");
-  u.values[5] = status; users_().getRange(u.row, 6).setValue(status); return true;
+  u.values[5] = status; users_().getRange(u.row, 6).setValue(status); if (status !== "active") revokeUserSessions_(id); return true;
 }
 function resetPassword_(id, password) {
   if (!validPassword_(password)) throw new Error("weak_password");
@@ -184,7 +204,7 @@ function resetPassword_(id, password) {
 }
 function revokeUserSessions_(id) {
   const sh = sessions_(), rows = sh.getDataRange().getValues();
-  for (let i = rows.length - 1; i >= 1; i--) if (String(rows[i][1]) === String(id)) sh.deleteRow(i + 1);
+  for (let i = rows.length - 1; i >= 1; i--) if (String(rows[i][1]) === String(id)) { clearSessionCache_(String(rows[i][0])); sh.deleteRow(i + 1); }
 }
 function deleteUser_(id) {
   const u = findUserById_(String(id)); if (!u) throw new Error("user_not_found");
@@ -196,5 +216,6 @@ function setUserRole_(id, role, adminId) {
   const u = findUserById_(String(id)); if (!u) throw new Error("user_not_found");
   if (String(id) === String(adminId)) throw new Error("cannot_change_own_role");
   users_().getRange(u.row, 5).setValue(role);
+  revokeUserSessions_(id);
   return true;
 }
