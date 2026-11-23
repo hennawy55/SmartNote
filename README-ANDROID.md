@@ -18,6 +18,9 @@ APK output: `android/app/build/outputs/apk/debug/app-debug.apk`.
 
 For a release APK, create a signing key in Android Studio (Build > Generate Signed Bundle / APK) and keep the keystore private.
 
+## Android system bars (not full-screen)
+The Android wrapper explicitly keeps the status bar and bottom navigation/gesture area visible, clears immersive full-screen flags, and prevents the WebView from drawing underneath the system bars. The Capacitor StatusBar plugin is configured with a burgundy status-bar background and light icons.
+
 ## Notification permission
 On Android 13/API 33+, the first tap on "تفعيل التنبيهات" calls the native permission prompt. Android 12 and lower do not show this runtime prompt. The app also creates a notification channel.
 
