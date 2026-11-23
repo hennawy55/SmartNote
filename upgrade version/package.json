@@ -6,7 +6,8 @@
   "scripts": {
     "android:sync": "cap sync android",
     "android:open": "cap open android",
-    "prepare:android": "mkdir -p www && cp index.html app.js styles.css theme.js language.js manifest.json sw.js www/ && if [ -f lucide.min.js ]; then cp lucide.min.js www/; fi && if [ -d icons ]; then cp -r icons www/icons; fi && esbuild android-notifications.js --bundle --format=iife --outfile=www/native-notifications.bundle.js && esbuild android-back.js --bundle --format=iife --outfile=www/native-back.bundle.js"
+    "prepare:android": "mkdir -p www && cp index.html app.js styles.css theme.js language.js manifest.json sw.js www/ && if [ -f lucide.min.js ]; then cp lucide.min.js www/; fi && if [ -d icons ]; then cp -r icons www/icons; fi && esbuild android-notifications.js --bundle --format=iife --outfile=www/native-notifications.bundle.js && esbuild android-back.js --bundle --format=iife --outfile=www/native-back.bundle.js",
+    "test:smoke": "node tests/smoke-check.cjs"
   },
   "dependencies": {
     "@capacitor/android": "^7.4.3",
