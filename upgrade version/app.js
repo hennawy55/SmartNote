@@ -174,8 +174,7 @@
   async function apiPost(payload){
     const guarded=['assignment_detail','assignment_create','assignment_update','assignment_status','assignment_reassign','reassignment_request','reassignment_review','assignment_note_add','assignment_archive','assignment_restore'];
     const key=guarded.includes(payload.action)?payload.action+':'+String(payload.assignmentId||payload.requestId||'global'):'';
-    if(key&&assignmentRequestsInFlight.has(key))return assignmentRequestsInFlight.get(key);
-    if(key&&assignmentRequestsInFlight.size)return assignmentRequestsInFlight.values().next().value;
+    if(key&&assignmentRequestsInFlight.size)throw new Error('operation_in_progress');
     const request=(async()=>{
     const response=await fetch(API_URL,{method:'POST',redirect:'follow',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({...payload,token:authToken})});
     const raw=await response.text();let result;try{result=JSON.parse(raw)}catch{throw new Error('لم تصل استجابة صالحة من Google Apps Script؛ تحقق من نشر Web App')}
