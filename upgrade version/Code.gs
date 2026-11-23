@@ -7,6 +7,13 @@ const SESSIONS_SHEET = "Sessions";
 const PART_SIZE = 49900;
 const SESSION_DAYS = 30;
 const HASH_ROUNDS = 12000;
+const UPGRADE_SHEETS = {
+  Assignments: ["AssignmentID","Title","Description","Status","Priority","DueAt","CreatedAt","AssignedAt","UpdatedAt","CreatedBy","CreatedByName","OwnerLeaderID","OwnerLeaderName","AssigneeID","AssigneeName","ArchivedAt","ViewedAt"],
+  AssignmentActivity: ["ActivityID","AssignmentID","ActorID","ActorName","Action","DetailsJSON","CreatedAt"],
+  ReassignmentRequests: ["RequestID","AssignmentID","FromUserID","FromUserName","ToUserID","ToUserName","Reason","Status","RequestedAt","ReviewedAt","ReviewedByID","ReviewedByName"],
+  AssignmentNotes: ["NoteID","AssignmentID","AuthorID","AuthorName","Visibility","Body","CreatedAt","UpdatedAt"],
+  Notifications: ["NotificationID","UserID","AssignmentID","Type","Title","Body","IsRead","CreatedAt","ReadAt"]
+};
 
 function doGet() {
   return json_({ ok: true, service: "SmartNote API", version: 2 });
@@ -55,21 +62,39 @@ function book_() {
 
 /** Run manually once after setting SPREADSHEET_ID. Creates tables without deleting data. */
 function setupSmartNoteDatabase() {
-  const ss = book_();
+  const props = PropertiesService.getScriptProperties();
+  let id = props.getProperty("SPREADSHEET_ID"), ss;
+  if (id) ss = SpreadsheetApp.openById(id);
+  else { ss = SpreadsheetApp.create("SmartNote Upgrade Database"); id = ss.getId(); props.setProperty("SPREADSHEET_ID", id); }
   const specs = [
-    { name: USERS_SHEET, headers: ["UserID","Username","PasswordHash","Salt","Role","Status","UpdatedAt","DatabaseJSON"] },
-    { name: SESSIONS_SHEET, headers: ["TokenHash","UserID","ExpiresAt","CreatedAt","LastSeenAt","DeviceLabel"] }
+    { name: USERS_SHEET, headers: ["UserID","Username","PasswordHash","Salt","Role","Status","UpdatedAt","DatabaseJSON","MustChangePassword"] },
+    { name: SESSIONS_SHEET, headers: ["TokenHash","UserID","ExpiresAt","CreatedAt","LastSeenAt","DeviceLabel"] },
+    ...Object.keys(UPGRADE_SHEETS).map(name => ({name, headers: UPGRADE_SHEETS[name]}))
   ];
   specs.forEach(spec => {
     let sh = ss.getSheetByName(spec.name);
     if (!sh) sh = ss.insertSheet(spec.name);
-    const existing = sh.getRange(1, 1, 1, spec.headers.length).getDisplayValues()[0];
-    if (sh.getLastRow() === 0 || existing.every(v => !v)) sh.getRange(1, 1, 1, spec.headers.length).setValues([spec.headers]);
+    const existing = sh.getLastRow() ? sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), spec.headers.length)).getDisplayValues()[0] : [];
+    spec.headers.forEach((header,i) => { if (!existing[i]) sh.getRange(1,i+1).setValue(header); else if (existing[i] !== header) throw new Error("schema_mismatch_"+spec.name); });
     sh.setFrozenRows(1);
     sh.getRange(1, 1, 1, spec.headers.length).setFontWeight("bold");
   });
   ss.getSheetByName(USERS_SHEET).getRange("H:H").setNumberFormat("@");
-  return { ok: true, spreadsheetId: ss.getId(), sheets: specs.map(s => s.name) };
+  createDefaultAdmin_();
+  return { ok: true, spreadsheetId: ss.getId(), spreadsheetUrl:ss.getUrl(), sheets: specs.map(s => s.name) };
+}
+function createDefaultAdmin_() {
+  const sh=users_();
+  if(sh.getLastRow()>1) return false;
+  const salt=randomHex_(16), row=sh.getLastRow()+1;
+  sh.getRange(row,1,1,9).setValues([[Utilities.getUuid(),"admin",hashPassword_("1234567890",salt),salt,"admin","active",new Date().toISOString(),"{}",true]]);
+  return true;
+}
+function setupSmartNoteUpgrade() {
+  const result=setupSmartNoteDatabase();
+  Logger.log("SmartNote Upgrade database: "+result.spreadsheetUrl);
+  Logger.log("First login: username admin; temporary password 1234567890. Change it immediately.");
+  return result;
 }
 function sheet_(name, headers) {
   const ss = book_(); let sh = ss.getSheetByName(name);
@@ -147,7 +172,7 @@ function cleanUsername_(v) {
 function insertUser_(username, password, role) {
   const sh = users_(), salt = randomHex_(16), row = sh.getLastRow() + 1, id = Utilities.getUuid();
   sh.getRange(row, 1, 1, 7).setValues([[id, username, hashPassword_(password, salt), salt, role, "active", new Date().toISOString()]]);
-  sh.getRange(row, 8).setNumberFormat("@").setValue("{}");
+  sh.getRange(row, 8).setNumberFormat("@").setValue("{}");\n  sh.getRange(row, 9).setValue(false);
   return { row: row, values: sh.getRange(row, 1, 1, 8).getValues()[0] };
 }
 function login_(req) {
@@ -235,7 +260,7 @@ function createUser_(req) {
   const username = cleanUsername_(req.username);
   if (!validPassword_(req.password)) throw new Error("weak_password");
   if (findUser_(username)) throw new Error("username_exists");
-  return publicUser_(insertUser_(username, req.password, "user"));
+  return publicUser_(insertUser_(username, req.password, ["admin","leader","user"].includes(req.role) ? req.role : "user"));
 }
 function setUserStatus_(id, status) {
   if (!["active", "disabled"].includes(status)) throw new Error("invalid_status");
@@ -259,7 +284,7 @@ function deleteUser_(id) {
 }
 
 function setUserRole_(id, role, adminId) {
-  if (!["admin", "user"].includes(role)) throw new Error("invalid_role");
+  if (!["admin", "leader", "user"].includes(role)) throw new Error("invalid_role");
   const u = findUserById_(String(id)); if (!u) throw new Error("user_not_found");
   if (String(id) === String(adminId)) throw new Error("cannot_change_own_role");
   users_().getRange(u.row, 5).setValue(role);
