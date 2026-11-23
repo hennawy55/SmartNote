@@ -109,6 +109,24 @@
     'تغييرات الصلاحيات وكلمات المرور تُطبق فوراً.':'Role and password changes take effect immediately.',
     'تم':'Done'
   });
+  Object.assign(translations,{
+    'سكني':'Residential','تجاري':'Commercial','إداري':'Administrative','ساحلي':'Coastal','متعدد الاستخدامات':'Mixed-use',
+    'شقة':'Apartment','فيلا':'Villa','تاون هاوس':'Townhouse','توين هاوس':'Twin house','دوبلكس':'Duplex','محل':'Shop','مكتب':'Office','عيادة':'Clinic','أخرى':'Other',
+    'متاحة':'Available','محجوزة':'Reserved','مباعة':'Sold','غير محدد':'Unspecified','مهتم':'Interested','متابعة':'Follow-up','تعاقد':'Contracted','غير مهتم':'Not interested',
+    'معلقة':'Pending','مكتملة':'Completed','قيد التنفيذ':'In progress','مهمة':'Important','عاجلة':'Urgent','عادية':'Normal',
+    'بدون تحديد':'Not specified','اختر...':'Choose...','بدون تاريخ':'No date','بدون موعد':'No due date','بدون عنوان':'Untitled',
+    'لا يوجد رقم هاتف':'No phone number','منطقة غير محددة':'Area not specified','لا توجد تفاصيل إضافية':'No additional details',
+    'تعذر حفظ نسخة محلية:':'Could not save local copy:','تعذر جدولة تذكيرات الهاتف:':'Could not schedule phone reminders:',
+    'تعذر تشغيل صوت التنبيه في هذا المتصفح':'Could not play reminder sound in this browser','تعذر تشغيل نغمة التنبيه:':'Could not play reminder tone:',
+    'المتابعة ما زالت معلقة':'The follow-up is still pending','حان موعد المتابعة:':'Follow-up due:','مرّت ساعة على بدء:':'One hour has passed since:',
+    'لم تعد هذه المتابعة موجودة':'This follow-up no longer exists','إشعارات النظام غير مدعومة أو Service Worker غير جاهز':'System notifications are not supported or the service worker is not ready.',
+    'تم الحفظ على الجهاز وستتم المزامنة عند عودة الإنترنت':'Saved on this device. Changes will sync when internet returns.',
+    'فشل الحفظ:':'Save failed:','فشل الحذف:':'Delete failed:','فشل تغيير حالة المتابعة:':'Could not update follow-up status:',
+    'تم حفظ البيانات على Google Sheets':'Data saved to Google Sheets','تم حذف السجل من Google Sheets':'Record deleted from Google Sheets',
+    'تم الحفظ محلياً وستتم المزامنة عند عودة الإنترنت':'Saved locally. Changes will sync when internet returns.',
+    'لم يصل رد صالح من Google Apps Script؛ تحقق من نشر Web App':'Google Apps Script returned an invalid response. Check the Web App deployment.',
+    'موعد المتابعة':'Follow-up date','تاريخ المتابعة':'Follow-up date','التسليم':'Delivery'
+  });
   const originals = new WeakMap();
   const attributeOriginals = new WeakMap();
   let language = 'ar';
