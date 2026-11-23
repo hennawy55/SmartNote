@@ -1,0 +1,99 @@
+name: Build SmartNote Upgrade Web and APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'upgrade version/**'
+      - '.github/workflows/smartnote-upgrade-build.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: upgrade version
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Android SDK packages
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
+          if [ -z "$SDKMANAGER" ]; then echo "Android sdkmanager not found under $ANDROID_HOME"; exit 1; fi
+          yes | "$SDKMANAGER" --licenses
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+      - name: Install dependencies
+        run: npm install
+      - name: Prepare Android web assets
+        run: npm run prepare:android
+      - name: Prepare web package
+        run: |
+          mkdir -p web-build
+          cp index.html app.js styles.css theme.js language.js manifest.json sw.js web-build/
+          if [ -d icons ]; then cp -r icons web-build/icons; fi
+          cd web-build
+          zip -qr ../smartnote-upgrade-web.zip .
+          cd ..
+      - name: Upload web package
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartnote-upgrade-web
+          path: upgrade version/smartnote-upgrade-web.zip
+          if-no-files-found: error
+          retention-days: 30
+      - name: Add Android project
+        run: npx cap add android
+      - name: Sync Capacitor
+        run: npx cap sync android
+      - name: Keep Android system bars visible
+        run: |
+          if grep -q 'targetSdkVersion = 35' android/variables.gradle; then sed -i 's/targetSdkVersion = 35/targetSdkVersion = 34/' android/variables.gradle; fi
+          if grep -q 'targetSdkVersion = 36' android/variables.gradle; then sed -i 's/targetSdkVersion = 36/targetSdkVersion = 34/' android/variables.gradle; fi
+          MAIN_ACTIVITY="android/app/src/main/java/com/hennawy55/smartnoteupgrade/MainActivity.java"
+          mkdir -p "$(dirname "$MAIN_ACTIVITY")"
+          cat > "$MAIN_ACTIVITY" <<'JAVA'
+          package com.hennawy55.smartnoteupgrade;
+          import android.graphics.Color;
+          import android.os.Bundle;
+          import android.view.View;
+          import android.view.WindowManager;
+          import androidx.core.view.WindowCompat;
+          import androidx.core.view.WindowInsetsCompat;
+          import androidx.core.view.WindowInsetsControllerCompat;
+          import com.getcapacitor.BridgeActivity;
+          public class MainActivity extends BridgeActivity {
+            @Override public void onCreate(Bundle savedInstanceState) {
+              super.onCreate(savedInstanceState);
+              getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+              getWindow().addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+              WindowCompat.setDecorFitsSystemWindows(getWindow(), true);
+              getWindow().setStatusBarColor(Color.rgb(250,247,244));
+              getWindow().setNavigationBarColor(Color.rgb(250,247,244));
+              View decor=getWindow().getDecorView();
+              WindowInsetsControllerCompat c=WindowCompat.getInsetsController(getWindow(),decor);
+              c.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_DEFAULT);
+              c.show(WindowInsetsCompat.Type.statusBars()|WindowInsetsCompat.Type.navigationBars());
+            }
+          }
+          JAVA
+      - name: Build debug APK
+        run: cd android && chmod +x gradlew && ./gradlew assembleDebug
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartnote-upgrade-debug-apk
+          path: upgrade version/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
