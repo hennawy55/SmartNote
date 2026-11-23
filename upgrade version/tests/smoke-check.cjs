@@ -22,6 +22,7 @@ assert(backend.includes('stalePendingReassignmentRequests_') && backend.includes
 assert(backend.includes('function assignmentHistory_'), 'History must have a dedicated authorized endpoint');
 assert(backend.includes('Users_backup_'), 'User schema migration must create a backup first');
 assert(backend.includes('too_many_attempts'), 'Login attempts must be throttled');
+assert(backend.includes('function getInitialAdminCredentials') && !backend.includes('1234567890'), 'New databases must not use a hardcoded default admin password');
 assert(backend.includes('setValue(true)'), 'Admin password reset must require password change at next login');
 assert(/data-admin-action=["']delete["']/.test(app), 'Admin UI must expose guarded account deletion');
 assert(backend.includes('AuditLog:') && backend.includes('admin_audit_list') && backend.includes('function audit_'), 'Account security events must be audited');
