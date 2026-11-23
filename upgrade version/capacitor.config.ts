@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.hennawy55.smartnote',
+  appId: 'com.hennawy55.smartnoteupgrade',
   appName: 'SmartNote',
   webDir: 'www',
   bundledWebRuntime: false,
