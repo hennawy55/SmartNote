@@ -15,6 +15,12 @@ assert(app.includes("action:'assignment_targets'"), 'Transferred assignment owne
 assert(app.includes("action:'reassignment_targets'"), 'Assignee reassignment request must use a scoped endpoint');
 assert(app.includes("Date.now()-lastVisibleSyncAt>=30000"), 'Cloud polling must be throttled to 30 seconds');
 assert(backend.includes('function sessionUser_') && backend.includes('cache.get(key)'), 'Session cache must be used');
+assert(!backend.includes('row: user.row') && backend.includes('findUserById_(cachedId)'), 'Cached sessions must resolve users by stable ID, not stale row numbers');
+assert(backend.includes('function readDatabase_(userId)') && backend.includes('findUserById_(String(userId))'), 'Database reads and writes must resolve the account row by stable user ID');
+assert(app.includes('assignmentRequestsInFlight.has(key)'), 'Concurrent follow-up requests must be guarded per operation key');
+assert(app.includes('notificationStateKey=()=>'), 'Notification state must be isolated per account');
+assert(!app.includes("popup.querySelector('#assignmentHistoryButton').onclick"), 'Assignment history must have only one click handler');
+assert(app.includes("new URLSearchParams(window.location.search).get('openTask')"), 'Notification deep links must open after session restoration');
 assert(backend.includes('function withScriptLock_'), 'Mutating operations must use a server lock');
 assert(backend.includes('user_has_active_assignments'), 'Deleting users with active assignments must be blocked');
 assert(backend.includes('isLastActiveAdmin_') && backend.includes('last_active_admin'), 'The last active administrator must be protected');
@@ -32,6 +38,7 @@ assert(backend.includes('AuditLog:') && backend.includes('admin_audit_list') && 
 assert(!app.includes('toggleTaskAlertSnooze') && !app.includes('enableNotifications'), 'Removed notification controls must not remain in the app');
 assert(!html.includes('lucide@latest') && html.includes('./lucide.min.js'), 'Lucide must be pinned and local');
 assert(worker.includes('./lucide.min.js'), 'Offline cache must include local Lucide runtime');
+assert(JSON.parse(read('package.json')).dependencies.lucide === '0.468.0', 'Lucide runtime must be pinned as a local dependency');
 assert(manifest.lang === 'en' && manifest.dir === 'ltr', 'App manifest must use English as default');
 assert(Array.isArray(manifest.icons) && manifest.icons.some(icon => icon.src === 'icons/smartnote-icon.svg'), 'PWA manifest must include the local app icon');
 assert(worker.includes('./icons/smartnote-icon.svg'), 'Offline cache must include the app icon');

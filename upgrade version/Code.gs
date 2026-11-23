@@ -30,11 +30,11 @@ function doPost(e) {
     if (action === "login") return login_(req);
     if (action === "logout") return logout_(req);
     if (action === "change_password") return withSession_(req.token, function (user) { return { ok: true, changed: changeOwnPassword_(user, req.oldPassword, req.newPassword, req.token) }; });
-    if (action === "me") return withSession_(req.token, function (user) { return { ok: true, user: publicUser_(user), data: readDatabase_(user.row) }; });
-    if (action === "load") return withSession_(req.token, function (user) { return { ok: true, data: readDatabase_(user.row) }; });
+    if (action === "me") return withSession_(req.token, function (user) { return { ok: true, user: publicUser_(user), data: readDatabase_(String(user.values[0])) }; });
+    if (action === "load") return withSession_(req.token, function (user) { return { ok: true, data: readDatabase_(String(user.values[0])) }; });
     if (action === "save") return withSession_(req.token, function (user) {
       if (!req.data || typeof req.data !== "object" || Array.isArray(req.data)) throw new Error("invalid_data");
-      writeDatabase_(user.row, JSON.stringify(req.data));
+      writeDatabase_(String(user.values[0]), JSON.stringify(req.data));
       return { ok: true, saved: true };
     });
     if (action === "admin_list") return withAdmin_(req.token, function () { return { ok: true, users: listUsers_() }; });
@@ -254,8 +254,8 @@ function login_(req) {
 function sessionCacheKey_(tokenHash) { return "smartnote_session_" + tokenHash; }
 function cacheSession_(tokenHash, user, expiresAt) {
   const seconds = Math.max(1, Math.min(21600, Math.floor((Date.parse(expiresAt) - Date.now()) / 1000)));
-  // Never put password hashes or salts in the shared script cache.
-  const safeUser = { row: user.row, values: [String(user.values[0]), String(user.values[1]), "", "", String(user.values[4]), String(user.values[5]), String(user.values[6] || ""), String(user.values[7] || false), ""] };
+  // Cache stable identity only; spreadsheet row numbers change when users are deleted.
+  const safeUser = { values: [String(user.values[0]), String(user.values[1]), "", "", String(user.values[4]), String(user.values[5]), String(user.values[6] || ""), String(user.values[7] || false), ""] };
   if (seconds > 0) CacheService.getScriptCache().put(sessionCacheKey_(tokenHash), JSON.stringify({ user: safeUser, expiresAt: expiresAt, lastSeenAt: Date.now() }), seconds);
 }
 function touchSession_(tokenHash,entry,key){
@@ -275,8 +275,16 @@ function sessionUser_(token) {
   if (!token || typeof token !== "string" || token.length < 32) throw new Error("unauthorized");
   const wanted=hashToken_(token),cache=CacheService.getScriptCache(),key=sessionCacheKey_(wanted),cached=cache.get(key);
   if(cached){
-    try{const entry=JSON.parse(cached);if(entry.expiresAt&&Date.parse(entry.expiresAt)>Date.now()&&entry.user&&String(entry.user.values[5])==="active"){touchSession_(wanted,entry,key);return {row:Number(entry.user.row),values:entry.user.values};}}
-    catch(_){cache.remove(key);}
+    try{
+      const entry=JSON.parse(cached),cachedId=String(entry.user&&entry.user.values&&entry.user.values[0]||"");
+      if(entry.expiresAt&&Date.parse(entry.expiresAt)>Date.now()&&cachedId){
+        const currentUser=findUserById_(cachedId);
+        if(!currentUser||String(currentUser.values[5])!=="active"){cache.remove(key);throw new Error("inactive_user");}
+        touchSession_(wanted,entry,key);
+        cacheSession_(wanted,currentUser,String(entry.expiresAt));
+        return currentUser;
+      }
+    }catch(error){cache.remove(key);if(error&&error.message==="inactive_user")throw error;}
   }
   const sh=sessions_(),last=sh.getLastRow();if(last<2)throw new Error("unauthorized");
   const match=sh.getRange(2,1,last-1,1).createTextFinder(wanted).matchEntireCell(true).findNext();
@@ -313,19 +321,22 @@ function splitSafe_(text) {
   }
   return parts.length ? parts : [""];
 }
-function readDatabase_(row) {
-  const sh=users_(),lastCol=sh.getLastColumn();
-  if(lastCol<9)return {};
-  const cells=sh.getRange(row,9,1,lastCol-8).getDisplayValues()[0];
-  const joined=cells.map(String).join("").replace(/\\s+$/,"");
-  try{return JSON.parse(joined||"{}");}catch(_){throw new Error("invalid_saved_data");}
-}
-function writeDatabase_(row,json) {
+function readDatabase_(userId) {
   return withScriptLock_(function(){
+    const user=findUserById_(String(userId));if(!user)throw new Error("inactive_user");
+    const sh=users_(),lastCol=sh.getLastColumn();if(lastCol<9)return {};
+    const cells=sh.getRange(user.row,9,1,lastCol-8).getDisplayValues()[0];
+    const joined=cells.map(String).join("").replace(/\\s+$/, "");
+    try{return JSON.parse(joined||"{}");}catch(_){throw new Error("invalid_saved_data");}
+  });
+}
+function writeDatabase_(userId,json) {
+  return withScriptLock_(function(){
+    const user=findUserById_(String(userId));if(!user)throw new Error("inactive_user");
     const parts=splitSafe_(json);if(parts.length>100)throw new Error("database_too_large");
     const sh=users_(),startCol=9,oldWidth=Math.max(1,sh.getLastColumn()-startCol+1),width=Math.max(oldWidth,parts.length),values=[Array(width).fill("")];
     for(let i=0;i<parts.length;i++)values[0][i]=parts[i];
-    sh.getRange(row,startCol,1,width).setNumberFormat("@").setValues(values);sh.getRange(row,7).setValue(new Date().toISOString());
+    sh.getRange(user.row,startCol,1,width).setNumberFormat("@").setValues(values);sh.getRange(user.row,7).setValue(new Date().toISOString());
   });
 }
 function listUsers_() {
@@ -522,8 +533,15 @@ function addAssignmentNote_(u,req){
  });
 }
 function assignmentDetail_(u,id,includeHistory){
- const x=assignmentById_(id);if(!x)throw new Error("user_not_found");assertAssignmentAccess_(u,x.data,false);
- if(!x.data.ViewedAt&&String(x.data.AssigneeID)===String(u.values[0])){x.data.ViewedAt=new Date().toISOString();if(x.data.Status==="new")x.data.Status="viewed";x.data.UpdatedAt=x.data.ViewedAt;assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>x.data[k])]);clearAssignmentCache_();activity_(id,u,"viewed",{});}
+ let x=assignmentById_(id);if(!x)throw new Error("user_not_found");assertAssignmentAccess_(u,x.data,false);
+ if(!x.data.ViewedAt&&String(x.data.AssigneeID)===String(u.values[0])){
+  const marked=withScriptLock_(function(){
+   const current=assignmentById_(id);if(!current||current.data.ViewedAt||String(current.data.AssigneeID)!==String(u.values[0]))return false;
+   current.data.ViewedAt=new Date().toISOString();if(current.data.Status==="new")current.data.Status="viewed";current.data.UpdatedAt=current.data.ViewedAt;
+   assignmentSheet_().getRange(current.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>current.data[k])]);clearAssignmentCache_();return true;
+  });
+  x=assignmentById_(id)||x;if(marked)activity_(id,u,"viewed",{});
+ }
  const ns=notesSheet_(),nl=ns.getLastRow(),nb=Math.max(2,nl-1999),nr=nl>=2?ns.getRange(nb,1,nl-nb+1,8).getValues():[];
  const notes=nr.filter(r=>String(r[1])===String(id)&&(String(r[4])==="shared"||String(r[2])===String(u.values[0]))).map(r=>({id:r[0],authorId:r[2],authorName:r[3],visibility:r[4],body:r[5],createdAt:r[6]}));
  const rs=requestSheet_(),rl=rs.getLastRow(),rb=Math.max(2,rl-999),rr=rl>=2?rs.getRange(rb,1,rl-rb+1,12).getValues():[];
