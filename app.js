@@ -232,9 +232,10 @@
     const result=preloadedData&&typeof preloadedData==='object'?{data:preloadedData}:await apiPost({action:'load'});db=normalizeDatabase(result.data||{});isReady=true;localRevision=0;cacheLocalDatabase(db,false);renderAll();syncNativeTaskReminders();// Login gate is created only for manual login; keep automatic session restore safe.
     document.getElementById('loginGate')?.style.setProperty('display','none');hideGate();setConnection(true,'تم تسجيل الدخول؛ المزامنة كل 5 ثوانٍ.');
     if(currentUser?.role==='admin') addAdminButton();
-    if(!document.getElementById('logoutButton')){const b=document.createElement('button');b.id='logoutButton';b.className='btn small';b.textContent='تسجيل الخروج';b.onclick=async()=>{try{await apiPost({action:'logout'})}catch(_){}authToken='';currentUser=null;isReady=false;localStorage.removeItem(SESSION_KEY);showLogin('تم تسجيل الخروج.');document.getElementById('adminUsersButton')?.remove();b.remove()};document.querySelector('.top-actions').prepend(b)}
+    if(!document.getElementById('logoutButton')){const b=document.createElement('button');b.id='logoutButton';b.className='btn small';b.textContent=window.appTranslate?.('تسجيل الخروج')||(document.documentElement.lang==='en'?'Sign out':'تسجيل الخروج');b.onclick=async()=>{try{await apiPost({action:'logout'})}catch(_){}authToken='';currentUser=null;isReady=false;localStorage.removeItem(SESSION_KEY);showLogin('تم تسجيل الخروج.');document.getElementById('adminUsersButton')?.remove();b.remove()};document.querySelector('.top-actions').prepend(b)}
 
   }
+  window.addEventListener('app-language-change',()=>{const button=document.getElementById('logoutButton');if(button)button.textContent=window.appTranslate?.('تسجيل الخروج')||(document.documentElement.lang==='en'?'Sign out':'تسجيل الخروج')});
   function addAdminButton(){
     if(document.getElementById('adminUsersButton'))return;
     const b=document.createElement('button');b.id='adminUsersButton';b.className='btn small';b.textContent='إدارة المستخدمين';b.onclick=openAdminPanel;document.querySelector('.top-actions').prepend(b);
