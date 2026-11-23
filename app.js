@@ -210,7 +210,7 @@
       document.getElementById('loginForm').addEventListener('submit',async e=>{
         e.preventDefault();const button=e.currentTarget.querySelector('button[type=submit]'),username=document.getElementById('loginUsername').value.trim(),password=document.getElementById('loginPassword').value;
         button.disabled=true;button.classList.add('is-loading');document.getElementById('loginError').textContent='جارٍ التحقق من بيانات الدخول...';
-        try{const result=await apiPost({action:'login',username,password});authToken=result.token;currentUser=result.user;sessionStorage.setItem(SESSION_KEY,JSON.stringify({token:authToken,user:currentUser}));await afterLogin()}
+        try{const result=await apiPost({action:'login',username,password});authToken=result.token;currentUser=result.user;localStorage.setItem(SESSION_KEY,JSON.stringify({token:authToken,user:currentUser}));await afterLogin()}
         catch(err){document.getElementById('loginError').textContent=err.message==='unauthorized'?'اسم المستخدم أو كلمة المرور غير صحيحة':err.message}
         finally{button.disabled=false;button.classList.remove('is-loading')}
       });
@@ -221,7 +221,7 @@
   async function afterLogin(){
     const result=await apiPost({action:'load'});db=normalizeDatabase(result.data||{});isReady=true;localRevision=0;renderAll();syncNativeTaskReminders();document.getElementById('loginGate').style.display='none';hideGate();setConnection(true,'تم تسجيل الدخول؛ المزامنة كل 5 ثوانٍ.');
     if(currentUser?.role==='admin') addAdminButton();
-    if(!document.getElementById('logoutButton')){const b=document.createElement('button');b.id='logoutButton';b.className='btn small';b.textContent='تسجيل الخروج';b.onclick=async()=>{try{await apiPost({action:'logout'})}catch(_){}authToken='';currentUser=null;isReady=false;sessionStorage.removeItem(SESSION_KEY);showLogin('تم تسجيل الخروج.');document.getElementById('adminUsersButton')?.remove();b.remove()};document.querySelector('.top-actions').prepend(b)}
+    if(!document.getElementById('logoutButton')){const b=document.createElement('button');b.id='logoutButton';b.className='btn small';b.textContent='تسجيل الخروج';b.onclick=async()=>{try{await apiPost({action:'logout'})}catch(_){}authToken='';currentUser=null;isReady=false;localStorage.removeItem(SESSION_KEY);showLogin('تم تسجيل الخروج.');document.getElementById('adminUsersButton')?.remove();b.remove()};document.querySelector('.top-actions').prepend(b)}
 
   }
   function addAdminButton(){
@@ -264,9 +264,9 @@
   async function initializeCloud(){
     if(!navigator.onLine){showLogin('اتصل بالإنترنت لتسجيل الدخول.');return}
     try{
-      const saved=sessionStorage.getItem(SESSION_KEY);
+      const saved=localStorage.getItem(SESSION_KEY);
       if(saved){const s=JSON.parse(saved);authToken=s.token||'';currentUser=s.user||null;if(authToken){await apiPost({action:'me'});await afterLogin();return}}
-    }catch(_){authToken='';currentUser=null;sessionStorage.removeItem(SESSION_KEY)}
+    }catch(_){authToken='';currentUser=null;localStorage.removeItem(SESSION_KEY)}
     showLogin();
   }
   document.getElementById('retryConnection').onclick=initializeCloud;
