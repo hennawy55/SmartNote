@@ -210,7 +210,7 @@
       document.getElementById('loginForm').addEventListener('submit',async e=>{
         e.preventDefault();const button=e.currentTarget.querySelector('button[type=submit]'),username=document.getElementById('loginUsername').value.trim(),password=document.getElementById('loginPassword').value;
         button.disabled=true;button.classList.add('is-loading');document.getElementById('loginError').textContent='جارٍ التحقق من بيانات الدخول...';
-        try{const result=await apiPost({action:'login',username,password});authToken=result.token;currentUser=result.user;localStorage.setItem(SESSION_KEY,JSON.stringify({token:authToken,user:currentUser}));await afterLogin()}
+        try{const result=await apiPost({action:'login',username,password});authToken=result.token;currentUser=result.user;localStorage.setItem(SESSION_KEY,JSON.stringify({token:authToken,user:currentUser}));await afterLogin(result.data||{})}
         catch(err){if(err.message==='unauthorized'||err.message==='inactive_user'){authToken='';currentUser=null;localStorage.removeItem(SESSION_KEY);document.getElementById('loginError').textContent='اسم المستخدم أو كلمة المرور غير صحيحة'}else{document.getElementById('loginError').textContent='تعذر الاتصال بالخادم: '+err.message}}
         finally{button.disabled=false;button.classList.remove('is-loading')}
       });
