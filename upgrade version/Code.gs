@@ -29,7 +29,7 @@ function doPost(e) {
     if (action === "bootstrap") return bootstrap_(req);
     if (action === "login") return login_(req);
     if (action === "logout") return logout_(req);
-    if (action === "change_password") return withSession_(req.token, function (user) { return { ok: true, changed: changeOwnPassword_(user, req.oldPassword, req.newPassword) }; });
+    if (action === "change_password") return withSession_(req.token, function (user) { return { ok: true, changed: changeOwnPassword_(user, req.oldPassword, req.newPassword, req.token) }; });
     if (action === "me") return withSession_(req.token, function (user) { return { ok: true, user: publicUser_(user), data: readDatabase_(user.row) }; });
     if (action === "load") return withSession_(req.token, function (user) { return { ok: true, data: readDatabase_(user.row) }; });
     if (action === "save") return withSession_(req.token, function (user) {
@@ -351,16 +351,20 @@ function resetPassword_(id,password,actor) {
     sh.getRange(u.row,8).setValue(true);revokeUserSessions_(id);audit_(actor,"password_reset",id,{mustChangePassword:true},"success");
   });
 }
-function changeOwnPassword_(u,oldPassword,newPassword){
+function changeOwnPassword_(u,oldPassword,newPassword,currentToken){
  return withScriptLock_(function(){
   if(!validPassword_(newPassword))throw new Error("weak_password");
   if(hashPassword_(String(oldPassword||""),String(u.values[3]))!==String(u.values[2]))throw new Error("unauthorized");
-  const salt=randomHex_(16),sh=users_();sh.getRange(u.row,3,1,2).setValues([[hashPassword_(newPassword,salt),salt]]);sh.getRange(u.row,8).setValue(false);sh.getRange(u.row,7).setValue(new Date().toISOString());if(String(u.values[4])==="admin")PropertiesService.getScriptProperties().deleteProperty("INITIAL_ADMIN_PASSWORD");audit_(u,"password_changed",String(u.values[0]),{},"success");return true;
+  const salt=randomHex_(16),sh=users_();sh.getRange(u.row,3,1,2).setValues([[hashPassword_(newPassword,salt),salt]]);sh.getRange(u.row,8).setValue(false);sh.getRange(u.row,7).setValue(new Date().toISOString());if(String(u.values[4])==="admin")PropertiesService.getScriptProperties().deleteProperty("INITIAL_ADMIN_PASSWORD");revokeUserSessionsExcept_(String(u.values[0]),currentToken);audit_(u,"password_changed",String(u.values[0]),{otherSessionsRevoked:true},"success");return true;
  });
 }
 function revokeUserSessions_(id) {
-  const sh = sessions_(), rows = sh.getDataRange().getValues();
-  for (let i = rows.length - 1; i >= 1; i--) if (String(rows[i][1]) === String(id)) { clearSessionCache_(String(rows[i][0])); sh.deleteRow(i + 1); }
+  const sh=sessions_(),rows=sh.getDataRange().getValues();
+  for(let i=rows.length-1;i>=1;i--)if(String(rows[i][1])===String(id)){clearSessionCache_(String(rows[i][0]));sh.deleteRow(i+1);}
+}
+function revokeUserSessionsExcept_(id,keepToken) {
+  const keepHash=hashToken_(String(keepToken||"")),sh=sessions_(),rows=sh.getDataRange().getValues();
+  for(let i=rows.length-1;i>=1;i--)if(String(rows[i][1])===String(id)&&String(rows[i][0])!==keepHash){clearSessionCache_(String(rows[i][0]));sh.deleteRow(i+1);}
 }
 function deleteUser_(id,actor) {
   return withScriptLock_(function(){
