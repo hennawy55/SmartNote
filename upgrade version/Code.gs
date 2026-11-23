@@ -55,7 +55,7 @@ function doPost(e) {
     if (action === "assignment_detail") return withSession_(req.token, function (user) { return { ok: true, assignment: assignmentDetail_(user, req.assignmentId) }; });
     if (action === "notification_list") return withSession_(req.token, function (user) { return { ok: true, notifications: listNotifications_(user) }; });
     if (action === "notification_read") return withSession_(req.token, function (user) { return { ok: true, read: markNotificationRead_(user, req.notificationId) }; });
-    if (action === "leader_users") return withSession_(req.token, function (user) { return { ok: true, users: listAssignableUsers_(user) }; });
+    if (action === "leader_users") return withSession_(req.token, function (user) { return { ok: true, users: listAssignableUsers_(user, req.excludeUserId) }; });
     throw new Error("invalid_action");
   } catch (err) {
     return json_({ error: safeError_(err) });
@@ -349,9 +349,9 @@ function canSeeAssignment_(u,a){return canManageAssignment_(u,a)||String(a.Assig
 function assertAssignmentAccess_(u,a,manage){if(!a||(!canSeeAssignment_(u,a))||(manage&&!canManageAssignment_(u,a)))throw new Error("forbidden");}
 function activity_(id,u,action,details){activitySheet_().appendRow([Utilities.getUuid(),id,String(u.values[0]),String(u.values[1]),action,JSON.stringify(details||{}),new Date().toISOString()]);}
 function notify_(userId,assignmentId,type,title,body){if(!userId)return;notificationSheet_().appendRow([Utilities.getUuid(),userId,assignmentId||"",type,title,body,false,new Date().toISOString(),""]);}
-function assignmentPublic_(a){return {id:String(a.AssignmentID),title:String(a.Title||""),description:String(a.Description||""),type:String(a.Type||"task"),clientName:String(a.ClientName||""),clientPhone:String(a.ClientPhone||""),status:String(a.Status||"new"),priority:String(a.Priority||"normal"),dueAt:String(a.DueAt||""),createdAt:String(a.CreatedAt||""),assignedAt:String(a.AssignedAt||""),updatedAt:String(a.UpdatedAt||""),createdBy:String(a.CreatedBy||""),createdByName:String(a.CreatedByName||""),ownerLeaderId:String(a.OwnerLeaderID||""),ownerLeaderName:String(a.OwnerLeaderName||""),assigneeId:String(a.AssigneeID||""),assigneeName:String(a.AssigneeName||""),archivedAt:String(a.ArchivedAt||""),viewedAt:String(a.ViewedAt||"")};}
+function assignmentPublic_(a){const type=String(a.Type||"task"),clientName=String(a.ClientName||"");let title=String(a.Title||"");if(type==="client"){title=clientName||title.replace(/^متابعة عميل\s*:\s*/,"");}return {id:String(a.AssignmentID),title:title,description:String(a.Description||""),type:type,clientName:clientName,clientPhone:String(a.ClientPhone||""),status:String(a.Status||"new"),priority:String(a.Priority||"normal"),dueAt:String(a.DueAt||""),createdAt:String(a.CreatedAt||""),assignedAt:String(a.AssignedAt||""),updatedAt:String(a.UpdatedAt||""),createdBy:String(a.CreatedBy||""),createdByName:String(a.CreatedByName||""),ownerLeaderId:String(a.OwnerLeaderID||""),ownerLeaderName:String(a.OwnerLeaderName||""),assigneeId:String(a.AssigneeID||""),assigneeName:String(a.AssigneeName||""),archivedAt:String(a.ArchivedAt||""),viewedAt:String(a.ViewedAt||"")};}
 function listAssignments_(u){return assignmentRows_().filter(x=>canSeeAssignment_(u,x.data)).map(x=>assignmentPublic_(x.data));}
-function listAssignableUsers_(u){return listUsers_().filter(x=>x.status==="active"&&x.id!==String(u.values[0])&&(!isLeader_(u)||x.role!=="admin")).map(x=>({id:x.id,username:x.username,role:x.role}));}
+function listAssignableUsers_(u,excludeId){const excluded=new Set([String(u.values[0]),String(excludeId||"")]);return listUsers_().filter(x=>x.status==="active"&&!excluded.has(x.id)&&(!isLeader_(u)||x.role!=="admin")).map(x=>({id:x.id,username:x.username,role:x.role}));}
 function createAssignment_(u,req){
  if(!isAdmin_(u)&&!isLeader_(u))throw new Error("forbidden");
  const type=req.assignmentType==="client"?"client":"task",clientName=String(req.clientName||"").trim(),clientPhone=String(req.clientPhone||"").trim();
