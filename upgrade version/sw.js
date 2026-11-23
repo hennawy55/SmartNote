@@ -70,11 +70,12 @@ self.addEventListener('fetch', event => {
 self.addEventListener('notificationclick', event => {
   event.notification.close();
   const taskId = event.notification.data && event.notification.data.taskId;
+  const alertKey = event.notification.data && event.notification.data.key;
   if (!taskId) return;
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     for (const client of windows) {
-      client.postMessage({ type: 'OPEN_TASK_NOTIFICATION', taskId });
+      client.postMessage({ type: 'OPEN_TASK_NOTIFICATION', taskId, key: alertKey });
       if ('focus' in client) return client.focus();
     }
     return self.clients.openWindow(`./?openTask=${encodeURIComponent(taskId)}`);
