@@ -172,8 +172,9 @@ function cleanUsername_(v) {
 function insertUser_(username, password, role) {
   const sh = users_(), salt = randomHex_(16), row = sh.getLastRow() + 1, id = Utilities.getUuid();
   sh.getRange(row, 1, 1, 7).setValues([[id, username, hashPassword_(password, salt), salt, role, "active", new Date().toISOString()]]);
-  sh.getRange(row, 8).setNumberFormat("@").setValue("{}");\n  sh.getRange(row, 9).setValue(false);
-  return { row: row, values: sh.getRange(row, 1, 1, 8).getValues()[0] };
+  sh.getRange(row, 8).setNumberFormat("@").setValue("{}");
+  sh.getRange(row, 9).setValue(false);
+  return { row: row, values: sh.getRange(row, 1, 1, 9).getValues()[0] };
 }
 function login_(req) {
   const username = cleanUsername_(req.username), found = findUser_(username);
