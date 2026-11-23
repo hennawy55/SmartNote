@@ -83,7 +83,7 @@ function json_(obj) {
 }
 function safeError_(err) {
   const msg=String(err&&err.message||"server_error");
-  return /^(invalid_|same_assignee$|request_pending$|request_not_pending$|request_stale$|cannot_change_own_role$|cannot_delete_self$|unauthorized$|forbidden$|inactive_user$|username_exists$|bootstrap_disabled$|bootstrap_already_used$|weak_password$|user_not_found$|cannot_disable_self$|database_too_large$|database_not_configured$|user_has_active_assignments$|user_has_pending_requests$|user_manages_active_assignments$|operation_in_progress$|too_many_attempts$|server_error$)/.test(msg)?"server_error"===msg?msg:msg:"server_error";
+  return /^(invalid_|same_assignee$|request_pending$|request_not_pending$|request_stale$|cannot_change_own_role$|cannot_delete_self$|unauthorized$|forbidden$|inactive_user$|username_exists$|bootstrap_disabled$|bootstrap_already_used$|weak_password$|user_not_found$|cannot_disable_self$|database_too_large$|database_not_configured$|user_has_active_assignments$|user_has_pending_requests$|user_manages_active_assignments$|cannot_disable_self$|operation_in_progress$|too_many_attempts$|server_error$)/.test(msg)?"server_error"===msg?msg:msg:"server_error";
 }
 function book_() {
   const id = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID");
@@ -343,6 +343,7 @@ function setUserStatus_(id,status,actor) {
   return withScriptLock_(function(){
     if(!["active","disabled"].includes(status))throw new Error("invalid_status");
     const u=findUserById_(String(id));if(!u)throw new Error("user_not_found");
+    if(status==="disabled"&&actor&&String(actor.values[0])===String(id))throw new Error("cannot_disable_self");
     if(status==="disabled"){
       const active=assignmentRows_().some(x=>!String(x.data.ArchivedAt||"")&&(String(x.data.AssigneeID)===String(id)||String(x.data.OwnerLeaderID)===String(id)));
       if(active)throw new Error("user_has_active_assignments");
