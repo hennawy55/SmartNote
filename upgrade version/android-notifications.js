@@ -60,6 +60,11 @@ if (isNative) {
   window.smartNoteNativeNotifications = {
     isNative: true,
 
+    async getPermissionStatus() {
+      const status = await LocalNotifications.checkPermissions();
+      return status.display === 'granted' ? 'granted' : status.display;
+    },
+
     async requestPermission() {
       const granted = await hasPermission(true);
       if (granted) await ensureChannel();
