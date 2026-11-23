@@ -19,6 +19,7 @@ assert(!backend.includes('row: user.row') && backend.includes('findUserById_(cac
 assert(backend.includes('function readDatabaseSnapshot_(userId)') && backend.includes('findUserById_(String(userId))'), 'Database reads and writes must resolve the account row by stable user ID');
 assert(backend.includes('UserDatabaseMeta: ["UserID","Revision","UpdatedAt"]') && backend.includes('expectedRevision)!==meta.revision') && backend.includes('throw new Error("data_conflict")'), 'Cloud database writes must reject stale revisions');
 assert(app.includes('revision:cloudRevision') && app.includes("saveError.message!=='data_conflict'"), 'Client sync must send revisions and resolve cross-device conflicts');
+assert(!app.includes("apiPost({action:'save',data:cloudPayload(db)})"), 'Session restoration must not submit unversioned database writes');
 assert(worker.includes('smartnote-offline-shell-v26'), 'Offline cache must be invalidated when app code changes');
 assert(app.includes('assignmentRequestsInFlight.has(key)'), 'Concurrent follow-up requests must be guarded per operation key');
 assert(app.includes('notificationStateKey=()=>'), 'Notification state must be isolated per account');

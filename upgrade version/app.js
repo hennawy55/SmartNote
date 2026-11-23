@@ -441,9 +441,10 @@
           const session=await apiPost({action:'me'});
           currentUser=session.user||currentUser;
           localStorage.setItem(SESSION_KEY,JSON.stringify({token:authToken,user:currentUser}));
-          if(hasPendingSync()){const local=readLocalDatabase();if(local){db=local;await apiPost({action:'save',data:cloudPayload(db)});clearPendingSync();cacheLocalDatabase(db,false)}else clearPendingSync()}
-          if(!hasPendingSync())await afterLogin(session.data||{},session.revision);
-          else {const local=readLocalDatabase();cloudRevision=Number(session.revision)||0;if(local)await afterLogin(local,session.revision);else await afterLogin(session.data||{},session.revision)}
+          const pendingLocal=hasPendingSync()?readLocalDatabase():null;
+          cloudRevision=Number(session.revision)||0;
+          if(pendingLocal)await afterLogin(pendingLocal,session.revision);
+          else await afterLogin(session.data||{},session.revision)
           return;
         }
       }catch(err){
