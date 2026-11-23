@@ -29,6 +29,15 @@
     'لا توجد متابعات جديدة موجهة إليك':'No new follow-ups assigned to you',
     'تم الاطلاع':'Viewed','لا توجد متابعات في هذه الحالة':'No follow-ups in this status'
   });
+  Object.assign(translations,{
+    'نوع الإسناد':'Assignment type','مهمة':'Task','عميل':'Client','عنوان المهمة':'Task title',
+    'اسم العميل':'Client name','رقم هاتف المتابعة':'Follow-up phone number',
+    'موعد المتابعة':'Follow-up date','إعادة إسناد':'Reassign','إعادة إسناد المتابعة':'Reassign follow-up',
+    'ملاحظات (اختياري)':'Notes (optional)','تأكيد إعادة الإسناد':'Confirm reassignment',
+    'تمت إعادة إسناد المتابعة بنجاح':'Follow-up reassigned successfully',
+    'لا يوجد مستخدمون متاحون للإسناد إليهم':'No eligible users available',
+    'إعادة إسناد مباشرة':'Directly reassigned','النوع':'Type'
+  });
   const originals = new WeakMap();
   const attributeOriginals = new WeakMap();
   let language = 'ar';
