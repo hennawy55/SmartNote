@@ -52,7 +52,7 @@
   });
   Object.assign(translations,{'operation_in_progress':'هناك إجراء آخر قيد التنفيذ، انتظر حتى يكتمل.','جارٍ التنفيذ':'In progress — please wait.'});
   Object.assign(translations,{
-    'too_many_attempts':'تم إيقاف محاولات تسجيل الدخول مؤقتاً. حاول مرة أخرى بعد 15 دقيقة.',
+    'too_many_attempts':'تم إيقاف محاولات تسجيل الدخول مؤقتاً. حاول مرة أخرى بعد 15 دقيقة.','تحميل إشعارات أقدم':'Load older notifications','جارٍ التحميل...':'Loading...','تعذر تحميل الإشعارات:':'Could not load notifications:',
     'user_has_active_assignments':'لا يمكن حذف المستخدم قبل إعادة إسناد متابعاته النشطة.','user_has_pending_requests':'لا يمكن حذف المستخدم ولديه طلبات إعادة إسناد معلقة.','user_manages_active_assignments':'لا يمكن تحويل هذا الموزع إلى مستخدم عادي قبل نقل مسؤولية متابعاته.','same_assignee':'لا يمكن اختيار نفس المسؤول الحالي.',
     'cannot_delete_self':'لا يمكنك حذف حسابك الحالي.',
     'هل تريد حذف هذا المستخدم؟ لا يمكن التراجع عن هذه العملية.':'Delete this user? This action cannot be undone.',
