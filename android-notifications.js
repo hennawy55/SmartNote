@@ -40,10 +40,11 @@ async function ensureChannel() {
   channelReady = true;
 }
 
-async function hasPermission() {
+async function hasPermission(request = false) {
   if (!isNative) return false;
   const status = await LocalNotifications.checkPermissions();
   if (status.display === 'granted') return true;
+  if (!request) return false;
   const requested = await LocalNotifications.requestPermissions();
   return requested.display === 'granted';
 }
@@ -53,13 +54,13 @@ if (isNative) {
     isNative: true,
 
     async requestPermission() {
-      const granted = await hasPermission();
+      const granted = await hasPermission(true);
       if (granted) await ensureChannel();
       return granted;
     },
 
     async syncTaskReminders(tasks = []) {
-      if (!(await hasPermission())) return;
+      if (!(await hasPermission(false))) return;
       await ensureChannel();
 
       const now = Date.now();
@@ -76,7 +77,6 @@ if (isNative) {
               body: 'حان موعد المتابعة: ' + (task.title || 'متابعة جديدة'),
               schedule: { at: dueAt },
               channelId: 'smartnote-reminders',
-              smallIcon: 'ic_launcher',
               extra: { smartNoteReminder: true, taskId: task.id, kind: 'due' }
             });
           }
