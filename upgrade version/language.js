@@ -38,6 +38,10 @@
     'لا يوجد مستخدمون متاحون للإسناد إليهم':'No eligible users available',
     'إعادة إسناد مباشرة':'Directly reassigned','النوع':'Type'
   });
+  Object.assign(translations,{
+    'متابعة عميل':'Client follow-up','متابعة عميل:':'Client follow-up:',
+    'موعد المتابعة: ':'Follow-up date: ','المسؤول: ':'Assignee: ','الموزع: ':'Assigned by: '
+  });
   const originals = new WeakMap();
   const attributeOriginals = new WeakMap();
   let language = 'ar';
