@@ -431,3 +431,6 @@ html[dir="ltr"] .admin-password-row{direction:ltr}
 [hidden]{display:none!important}
 
 .admin-user-delete{display:flex;justify-content:flex-end;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+
+.notification-load-more{width:calc(100% - 24px);margin:10px 12px 12px;justify-content:center}
+#notificationLoadMore[hidden]{display:none!important}
