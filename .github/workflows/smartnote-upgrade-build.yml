@@ -1,4 +1,7 @@
 name: Build SmartNote Upgrade Web and APK
+concurrency:
+  group: smartnote-upgrade-build
+  cancel-in-progress: true
 on:
   workflow_dispatch:
   push:
