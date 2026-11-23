@@ -211,7 +211,7 @@
         e.preventDefault();const button=e.currentTarget.querySelector('button[type=submit]'),username=document.getElementById('loginUsername').value.trim(),password=document.getElementById('loginPassword').value;
         button.disabled=true;button.classList.add('is-loading');document.getElementById('loginError').textContent='جارٍ التحقق من بيانات الدخول...';
         try{const result=await apiPost({action:'login',username,password});authToken=result.token;currentUser=result.user;localStorage.setItem(SESSION_KEY,JSON.stringify({token:authToken,user:currentUser}));await afterLogin()}
-        catch(err){document.getElementById('loginError').textContent=err.message==='unauthorized'?'اسم المستخدم أو كلمة المرور غير صحيحة':err.message}
+        catch(err){if(err.message==='unauthorized'||err.message==='inactive_user'){authToken='';currentUser=null;localStorage.removeItem(SESSION_KEY);document.getElementById('loginError').textContent='اسم المستخدم أو كلمة المرور غير صحيحة'}else{document.getElementById('loginError').textContent='تعذر الاتصال بالخادم: '+err.message}}
         finally{button.disabled=false;button.classList.remove('is-loading')}
       });
       if(window.lucide)window.lucide.createIcons({attrs:{'stroke-width':1.8}});
@@ -262,11 +262,32 @@
     }catch(err){toast('تعذر فتح إدارة المستخدمين: '+err.message)}
   }
   async function initializeCloud(){
-    if(!navigator.onLine){showLogin('اتصل بالإنترنت لتسجيل الدخول.');return}
-    try{
-      const saved=localStorage.getItem(SESSION_KEY);
-      if(saved){const s=JSON.parse(saved);authToken=s.token||'';currentUser=s.user||null;if(authToken){await apiPost({action:'me'});await afterLogin();return}}
-    }catch(_){authToken='';currentUser=null;localStorage.removeItem(SESSION_KEY)}
+    const saved=localStorage.getItem(SESSION_KEY);
+    if(!navigator.onLine){
+      if(saved){setConnection(false,'لا يوجد اتصال؛ سيتم استعادة جلستك عند عودة الإنترنت.');return}
+      showLogin('اتصل بالإنترنت لتسجيل الدخول.');return;
+    }
+    if(saved){
+      try{
+        const s=JSON.parse(saved);authToken=s.token||'';currentUser=s.user||null;
+        if(authToken){
+          const session=await apiPost({action:'me'});
+          currentUser=session.user||currentUser;
+          localStorage.setItem(SESSION_KEY,JSON.stringify({token:authToken,user:currentUser}));
+          await afterLogin(session.data||{});
+          return;
+        }
+      }catch(err){
+        if(err.message==='unauthorized'||err.message==='inactive_user'){
+          authToken='';currentUser=null;localStorage.removeItem(SESSION_KEY);
+        }else{
+          // A temporary network/server error must never erase a valid locally stored session.
+          setConnection(false,'تعذر الاتصال بالخادم. أعد المحاولة دون تسجيل خروجك.');
+          showLogin('تعذر استعادة الجلسة حالياً بسبب الاتصال. أعد المحاولة، ولن تحتاج لإدخال كلمة المرور.');
+          return;
+        }
+      }
+    }
     showLogin();
   }
   document.getElementById('retryConnection').onclick=initializeCloud;
