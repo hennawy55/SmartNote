@@ -116,11 +116,20 @@ function setupSmartNoteDatabase() {
   return { ok: true, spreadsheetId: ss.getId(), spreadsheetUrl:ss.getUrl(), sheets: specs.map(s => s.name) };
 }
 function createDefaultAdmin_() {
-  const sh=users_();
-  if(sh.getLastRow()>1) return false;
-  const salt=randomHex_(16), row=sh.getLastRow()+1;
-  sh.getRange(row,1,9).setValues([[Utilities.getUuid(),"admin",hashPassword_("1234567890",salt),salt,"admin","active",new Date().toISOString(),true,"{}"]]);
+  const sh=users_();if(sh.getLastRow()>1)return false;
+  const password=randomHex_(20),salt=randomHex_(16),row=sh.getLastRow()+1,props=PropertiesService.getScriptProperties();
+  sh.getRange(row,1,1,9).setValues([[Utilities.getUuid(),"admin",hashPassword_(password,salt),salt,"admin","active",new Date().toISOString(),true,"{}"]]);
+  props.setProperty("INITIAL_ADMIN_PASSWORD",password);
+  audit_(null,"initial_admin_created","",{username:"admin",mustChangePassword:true},"success");
   return true;
+}
+function getInitialAdminCredentials(){
+  const props=PropertiesService.getScriptProperties(),password=props.getProperty("INITIAL_ADMIN_PASSWORD");
+  if(!password){Logger.log("No one-time initial administrator password is pending.");return null;}
+  Logger.log("Username: admin");
+  Logger.log("Temporary password: "+password);
+  Logger.log("Change this password immediately after the first login.");
+  return {username:"admin",temporaryPassword:password};
 }
 /** Migrate old Users columns without discarding account data. */
 function migrateUsersSheetSchema_(sh) {
@@ -156,7 +165,7 @@ function migrateUsersSheetSchema_(sh) {
 function setupSmartNoteUpgrade() {
   const result=setupSmartNoteDatabase();
   Logger.log("SmartNote Upgrade database: "+result.spreadsheetUrl);
-  Logger.log("First login: username admin; temporary password 1234567890. Change it immediately.");
+  Logger.log("If this is a new database, run getInitialAdminCredentials() once in the Apps Script editor to retrieve the generated one-time password.");
   return result;
 }
 function sheet_(name, headers) {
@@ -346,7 +355,7 @@ function changeOwnPassword_(u,oldPassword,newPassword){
  return withScriptLock_(function(){
   if(!validPassword_(newPassword))throw new Error("weak_password");
   if(hashPassword_(String(oldPassword||""),String(u.values[3]))!==String(u.values[2]))throw new Error("unauthorized");
-  const salt=randomHex_(16),sh=users_();sh.getRange(u.row,3,1,2).setValues([[hashPassword_(newPassword,salt),salt]]);sh.getRange(u.row,8).setValue(false);sh.getRange(u.row,7).setValue(new Date().toISOString());audit_(u,"password_changed",String(u.values[0]),{},"success");return true;
+  const salt=randomHex_(16),sh=users_();sh.getRange(u.row,3,1,2).setValues([[hashPassword_(newPassword,salt),salt]]);sh.getRange(u.row,8).setValue(false);sh.getRange(u.row,7).setValue(new Date().toISOString());if(String(u.values[4])==="admin")PropertiesService.getScriptProperties().deleteProperty("INITIAL_ADMIN_PASSWORD");audit_(u,"password_changed",String(u.values[0]),{},"success");return true;
  });
 }
 function revokeUserSessions_(id) {
