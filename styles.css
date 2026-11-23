@@ -212,3 +212,80 @@ html[lang="en"] .online-gate{text-align:center}
  .admin-footer{align-items:flex-start;flex-direction:column}
  .admin-footer .btn{width:100%}
 }
+
+
+/* SmartNote login and admin refinement */
+.login-gate{
+  padding:clamp(16px,4vw,32px);
+  background:
+    radial-gradient(ellipse at 50% 8%,rgba(118,34,54,.16),transparent 48%),
+    rgba(7,11,21,.88);
+  backdrop-filter:blur(14px);
+}
+.login-card{
+  width:min(460px,100%);
+  max-width:460px!important;
+  margin:auto;
+  padding:clamp(24px,5vw,42px);
+  border-radius:26px;
+  text-align:right;
+  box-shadow:0 28px 90px rgba(0,0,0,.34),0 0 0 1px rgba(255,255,255,.035);
+}
+.login-brand{margin-bottom:28px;gap:14px}
+.login-brand-mark{width:56px;height:56px;border-radius:18px}
+.login-heading{margin-bottom:28px}
+.login-card .online-gate-title{font-size:clamp(21px,4vw,25px);line-height:1.4}
+.login-form{width:100%;gap:19px}
+.login-field{width:100%;gap:9px}
+.login-input-wrap{width:100%;height:56px;padding-inline:16px;border-radius:14px}
+.login-input-wrap input{height:100%;line-height:1.4}
+.login-error{min-height:18px;margin:0;text-align:center}
+.login-submit{height:54px;margin-top:2px;border-radius:14px}
+.login-footnote{margin-top:25px;line-height:1.7}
+:root[data-theme="dark"] .login-gate{
+  background:radial-gradient(ellipse at 50% 5%,rgba(146,54,78,.23),transparent 50%),rgba(5,8,16,.9);
+}
+:root[data-theme="dark"] .login-card{
+  background:linear-gradient(155deg,#29212a,#1d1a22);
+  border-color:#51404a;
+}
+.admin-gate{padding:clamp(10px,3vw,24px)}
+.admin-shell{
+  width:min(980px,100%);
+  max-height:min(92dvh,960px);
+  padding:clamp(18px,3vw,30px);
+  border-radius:24px;
+}
+.admin-header{align-items:center;margin-bottom:20px}
+.admin-create-form{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:13px;padding:18px}
+.admin-create-form label,.admin-user-controls label{font-size:11px}
+.admin-create-form .filter-input,.admin-user-card .filter-input{height:46px;border-radius:12px}
+.admin-create-form>.btn{height:46px;padding-inline:18px}
+.admin-users-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+.admin-user-card{padding:16px;border-radius:17px}
+.admin-user-top{gap:12px;margin-bottom:15px}
+.admin-user-controls{grid-template-columns:minmax(0,1fr) auto auto;gap:8px}
+.admin-user-controls .btn{height:44px;padding-inline:11px}
+.admin-password-row{gap:8px;margin-top:12px}
+.admin-password-row .filter-input{height:44px}
+.admin-password-row .btn{min-height:44px}
+@media(max-width:700px){
+  .login-gate{padding:16px;align-items:center}
+  .login-card{width:min(430px,100%);padding:27px 22px;border-radius:22px}
+  .login-brand{margin-bottom:24px}
+  .login-heading{margin-bottom:24px}
+  .login-input-wrap{height:54px}
+  .admin-gate{padding:9px;align-items:center}
+  .admin-shell{width:100%;max-height:94dvh;padding:16px;border-radius:19px}
+  .admin-header{margin-bottom:17px}
+  .admin-create-form{grid-template-columns:minmax(0,1fr);gap:10px;padding:14px}
+  .admin-create-title{grid-column:auto}
+  .admin-create-form>.btn{width:100%}
+  .admin-users-list{grid-template-columns:minmax(0,1fr);gap:10px}
+  .admin-user-card{padding:13px}
+  .admin-user-controls{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
+  .admin-user-controls label{grid-column:1/-1}
+  .admin-user-controls .btn{width:100%;white-space:normal;min-height:42px;height:auto}
+  .admin-password-row{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
+  .admin-password-row .btn{width:100%}
+}
