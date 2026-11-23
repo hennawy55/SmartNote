@@ -78,7 +78,7 @@
     walk(document.body);
     window.dispatchEvent(new CustomEvent('app-language-change',{detail:{language}}));
   }
-  try{language=localStorage.getItem('aqarLanguage')==='en'?'en':'ar'}catch{}
+  try{language=localStorage.getItem('aqarLanguage')==='ar'?'ar':'en'}catch{language='en'}
   document.documentElement.lang=language;document.documentElement.dir=language==='en'?'ltr':'rtl';
   document.addEventListener('DOMContentLoaded',()=>{
     setLanguage(language);
