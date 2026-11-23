@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const API_URL='https://script.google.com/macros/s/AKfycbzmcHaLj32xd1-7T87Ba_uplFca6oOhSpiiMHArrQ4k2bOYbsPDeBGb_gcZVQQGxito/exec';
+  const API_URL='https://script.google.com/macros/s/AKfycbxtsY2dd-ZKo3z01WeykRYNT9hCjx3LRHs237hkF7Ov0seOI5cfARlSxfUvY6aGVzi-/exec';
   const SESSION_KEY='smartnote-auth-session-v2';
   const DATABASE_NAME='SMARTNOTE_USER_DATABASE_V2';
   let authToken='', currentUser=null;
