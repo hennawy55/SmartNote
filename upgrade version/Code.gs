@@ -81,19 +81,20 @@ function setupSmartNoteDatabase() {
   if (id) ss = SpreadsheetApp.openById(id);
   else { ss = SpreadsheetApp.create("SmartNote Upgrade Database"); id = ss.getId(); props.setProperty("SPREADSHEET_ID", id); }
   const specs = [
-    { name: USERS_SHEET, headers: ["UserID","Username","PasswordHash","Salt","Role","Status","UpdatedAt","DatabaseJSON","MustChangePassword"] },
+    { name: USERS_SHEET, headers: ["UserID","Username","PasswordHash","Salt","Role","Status","UpdatedAt","MustChangePassword","DatabaseJSON"] },
     { name: SESSIONS_SHEET, headers: ["TokenHash","UserID","ExpiresAt","CreatedAt","LastSeenAt","DeviceLabel"] },
     ...Object.keys(UPGRADE_SHEETS).map(name => ({name, headers: UPGRADE_SHEETS[name]}))
   ];
   specs.forEach(spec => {
     let sh = ss.getSheetByName(spec.name);
     if (!sh) sh = ss.insertSheet(spec.name);
+    if (spec.name === USERS_SHEET) migrateUsersSheetSchema_(sh);
     const existing = sh.getLastRow() ? sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), spec.headers.length)).getDisplayValues()[0] : [];
     spec.headers.forEach((header,i) => { if (!existing[i]) sh.getRange(1,i+1).setValue(header); else if (existing[i] !== header) throw new Error("schema_mismatch_"+spec.name); });
     sh.setFrozenRows(1);
     sh.getRange(1, 1, 1, spec.headers.length).setFontWeight("bold");
   });
-  ss.getSheetByName(USERS_SHEET).getRange("H:H").setNumberFormat("@");
+  ss.getSheetByName(USERS_SHEET).getRange("I:ZZ").setNumberFormat("@");
   createDefaultAdmin_();
   return { ok: true, spreadsheetId: ss.getId(), spreadsheetUrl:ss.getUrl(), sheets: specs.map(s => s.name) };
 }
@@ -101,8 +102,36 @@ function createDefaultAdmin_() {
   const sh=users_();
   if(sh.getLastRow()>1) return false;
   const salt=randomHex_(16), row=sh.getLastRow()+1;
-  sh.getRange(row,1,1,9).setValues([[Utilities.getUuid(),"admin",hashPassword_("1234567890",salt),salt,"admin","active",new Date().toISOString(),"{}",true]]);
+  sh.getRange(row,1,9).setValues([[Utilities.getUuid(),"admin",hashPassword_("1234567890",salt),salt,"admin","active",new Date().toISOString(),true,"{}"]]);
   return true;
+}
+/** Migrate old Users columns without discarding account data. */
+function migrateUsersSheetSchema_(sh) {
+  const lastRow=sh.getLastRow(), lastCol=Math.max(sh.getLastColumn(),9);
+  if(!lastRow)return;
+  const headers=sh.getRange(1,1,1,lastCol).getDisplayValues()[0];
+  const desired=["UserID","Username","PasswordHash","Salt","Role","Status","UpdatedAt","MustChangePassword","DatabaseJSON"];
+  if(desired.every((h,i)=>headers[i]===h))return;
+  if(headers[7]!=="DatabaseJSON"||headers[8]!=="MustChangePassword") {
+    if(headers[7]==="MustChangePassword"&&headers[8]==="DatabaseJSON")return;
+    throw new Error("schema_mismatch_Users");
+  }
+  const rows=lastRow>1?sh.getRange(2,1,lastRow-1,lastCol).getValues():[];
+  sh.getRange(1,1,1,9).setValues([desired]);
+  rows.forEach((r,i)=>{
+    const flag=r[8], hasFlag=flag===true||flag===false||String(flag).toUpperCase()==="TRUE"||String(flag).toUpperCase()==="FALSE";
+    const mustChange=hasFlag&&(flag===true||String(flag).toUpperCase()==="TRUE");
+    const chunks=[String(r[7]==null?"":r[7])];
+    for(let c=8;c<r.length;c++){if(c===8&&hasFlag)continue;if(r[c]!==""&&r[c]!=null)chunks.push(String(r[c]));}
+    const json=chunks.join("").replace(/\s+$/,"");
+    try{JSON.parse(json||"{}");}catch(e){throw new Error("migration_invalid_saved_data_row_"+(i+2));}
+    const parts=splitSafe_(json||"{}");if(parts.length>100)throw new Error("database_too_large");
+    sh.getRange(i+2,8).setValue(mustChange);
+    const width=Math.max(1,parts.length);
+    sh.getRange(i+2,9,1,width).setNumberFormat("@").setValues([parts.concat(Array(width-parts.length).fill(""))]);
+    const clearStart=9+width;if(lastCol>=clearStart)sh.getRange(i+2,clearStart,1,lastCol-clearStart+1).clearContent();
+  });
+  sh.getRange(1,1,1,9).setFontWeight("bold");
 }
 function setupSmartNoteUpgrade() {
   const result=setupSmartNoteDatabase();
@@ -117,7 +146,7 @@ function sheet_(name, headers) {
   return sh;
 }
 function users_() {
-  const sh = sheet_(USERS_SHEET, ["UserID","Username","PasswordHash","Salt","Role","Status","UpdatedAt","DatabaseJSON"]);
+  const sh = sheet_(USERS_SHEET, ["UserID","Username","PasswordHash","Salt","Role","Status","UpdatedAt","MustChangePassword","DatabaseJSON"]);
   return sh;
 }
 function sessions_() { return sheet_(SESSIONS_SHEET, ["TokenHash","UserID","ExpiresAt","CreatedAt","LastSeenAt","DeviceLabel"]); }
@@ -139,7 +168,7 @@ function findUser_(username) {
   for (let i = 1; i < values.length; i++) if (String(values[i][1]).toLowerCase() === String(username).toLowerCase()) return { row: i + 1, values: values[i] };
   return null;
 }
-function publicUser_(u) { return { id: String(u.values[0]), username: String(u.values[1]), role: String(u.values[4]), status: String(u.values[5]), mustChangePassword: String(u.values[8]) === "true" || String(u.values[8]) === "TRUE" }; }
+function publicUser_(u) { return { id: String(u.values[0]), username: String(u.values[1]), role: String(u.values[4]), status: String(u.values[5]), mustChangePassword: u.values[7] === true || String(u.values[7]).toUpperCase() === "TRUE" }; }
 function bootstrap_(req) {
   const props = PropertiesService.getScriptProperties();
   const key = props.getProperty("BOOTSTRAP_KEY");
@@ -185,9 +214,7 @@ function cleanUsername_(v) {
 }
 function insertUser_(username, password, role) {
   const sh = users_(), salt = randomHex_(16), row = sh.getLastRow() + 1, id = Utilities.getUuid();
-  sh.getRange(row, 1, 1, 7).setValues([[id, username, hashPassword_(password, salt), salt, role, "active", new Date().toISOString()]]);
-  sh.getRange(row, 8).setValue("{}");
-  sh.getRange(row, 9).setValue(false);
+  sh.getRange(row, 1, 1, 9).setValues([[id, username, hashPassword_(password, salt), salt, role, "active", new Date().toISOString(), false, "{}"]]);
   return { row: row, values: sh.getRange(row, 1, 1, 9).getValues()[0] };
 }
 function login_(req) {
@@ -203,7 +230,7 @@ function sessionCacheKey_(tokenHash) { return "smartnote_session_" + tokenHash; 
 function cacheSession_(tokenHash, user, expiresAt) {
   const seconds = Math.max(1, Math.min(21600, Math.floor((Date.parse(expiresAt) - Date.now()) / 1000)));
   // Never put password hashes or salts in the shared script cache.
-  const safeUser = { row: user.row, values: [String(user.values[0]), String(user.values[1]), "", "", String(user.values[4]), String(user.values[5]), String(user.values[6] || ""), "", String(user.values[8] || false)] };
+  const safeUser = { row: user.row, values: [String(user.values[0]), String(user.values[1]), "", "", String(user.values[4]), String(user.values[5]), String(user.values[6] || ""), String(user.values[7] || false), ""] };
   if (seconds > 0) CacheService.getScriptCache().put(sessionCacheKey_(tokenHash), JSON.stringify({ user: safeUser, expiresAt: expiresAt }), seconds);
 }
 function clearSessionCache_(tokenHash) {
@@ -252,20 +279,21 @@ function splitSafe_(text) {
   return parts.length ? parts : [""];
 }
 function readDatabase_(row) {
-  const sh = users_(), lastCol = sh.getLastColumn();
-  if (lastCol < 8) return {};
-  const cells = sh.getRange(row, 8, 1, lastCol - 7).getDisplayValues()[0];
-  const joined = cells.map(String).join("").replace(/\s+$/, "");
-  try { return JSON.parse(joined || "{}"); } catch (_) { throw new Error("invalid_saved_data"); }
+  const sh=users_(),lastCol=sh.getLastColumn();
+  if(lastCol<9)return {};
+  const cells=sh.getRange(row,9,1,lastCol-8).getDisplayValues()[0];
+  const joined=cells.map(String).join("").replace(/\\s+$/,"");
+  try{return JSON.parse(joined||"{}");}catch(_){throw new Error("invalid_saved_data");}
 }
-function writeDatabase_(row, json) {
-  const parts = splitSafe_(json);
-  if (parts.length > 100) throw new Error("database_too_large");
-  const sh = users_(), oldWidth = Math.max(1, sh.getLastColumn() - 7), width = Math.max(oldWidth, parts.length);
-  const values = [Array(width).fill("")];
-  for (let i = 0; i < parts.length; i++) values[0][i] = parts[i];
-  sh.getRange(row, 8, 1, width).setNumberFormat("@").setValues(values);
-  sh.getRange(row, 7).setValue(new Date().toISOString());
+function writeDatabase_(row,json) {
+  const parts=splitSafe_(json);
+  if(parts.length>100)throw new Error("database_too_large");
+  const sh=users_(),startCol=9;
+  const oldWidth=Math.max(1,sh.getLastColumn()-startCol+1),width=Math.max(oldWidth,parts.length);
+  const values=[Array(width).fill("")];
+  for(let i=0;i<parts.length;i++)values[0][i]=parts[i];
+  sh.getRange(row,startCol,1,width).setNumberFormat("@").setValues(values);
+  sh.getRange(row,7).setValue(new Date().toISOString());
 }
 function listUsers_() {
   const sh = users_(), rows = sh.getDataRange().getValues();
