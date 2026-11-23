@@ -42,9 +42,8 @@
       </div>
       <div class="section-head"><div><h2>نظرة عامة</h2><p>آخر ما تم تسجيله في دفتر العقارات</p></div><button class="btn small" data-view="notes">كل الملاحظات ←</button></div>
       <div class="grid-2"><div class="panel"><h3>أحدث الإجراءات</h3><div id="dashboardActivity" class="list"></div></div><div class="panel"><h3>مساحات العمل</h3><div id="dashboardSpaces" class="list"></div></div></div>
-      <div class="section-head"><div><h2>المتابعات المفتوحة</h2><p>مرتبة حسب الأولوية ثم موعد المتابعة</p></div><div class="toolbar"><button class="btn small" data-view="tasks">كل المتابعات ←</button></div></div>
-      <div class="cards" id="dashboardTasks"></div>
-      <div class="section-head"><div><h2>أحدث المتابعات الموجهة الجديدة</h2><p>أحدث المتابعات المسندة إليك والتي لم تطّلع عليها بعد</p></div><button class="btn small" data-view="assigned">كل المتابعات الموجهة ←</button></div><div class="cards" id="dashboardAssignedNew"></div>
+      <section class="panel dashboard-followup-panel"><div class="section-head"><div><h2>المتابعات المفتوحة</h2><p>مرتبة حسب الأولوية ثم موعد المتابعة</p></div><div class="toolbar"><button class="btn small" data-view="tasks">كل المتابعات ←</button></div></div><div class="cards" id="dashboardTasks"></div></section>
+      <section class="panel dashboard-followup-panel"><div class="section-head"><div><h2>أحدث المتابعات الموجهة الجديدة</h2><p>أحدث المتابعات المسندة إليك والتي لم تطّلع عليها بعد</p></div><button class="btn small" data-view="assigned">كل المتابعات الموجهة ←</button></div><div class="cards" id="dashboardAssignedNew"></div></section>
     </section>
     <section class="view" id="view-workspaces"><div class="cards" id="workspaceList"></div></section>
     <section class="view" id="view-projects"><div class="toolbar"><input class="filter-input" id="projectFilter" placeholder="تصفية المشاريع..."><select class="filter-input" id="projectWorkspaceFilter"><option value="">كل المساحات</option></select></div><div class="section-spacer"></div><div class="cards" id="projectList"></div></section>
