@@ -58,7 +58,7 @@ function doPost(e) {
     if (action === "assignment_history") return withSession_(req.token, function (user) { return { ok: true, history: assignmentHistory_(user, req.assignmentId) }; });
     if (action === "assignment_targets") return withSession_(req.token, function (user) { const x=assignmentById_(req.assignmentId); if(!x)throw new Error("user_not_found"); assertAssignmentAccess_(user,x.data,true); return {ok:true,users:listAssignableUsers_(user,req.excludeUserId)}; });
     if (action === "reassignment_targets") return withSession_(req.token, function (user) { const x=assignmentById_(req.assignmentId); if(!x)throw new Error("user_not_found"); assertAssignmentAccess_(user,x.data,false); if(String(x.data.AssigneeID)!==String(user.values[0]))throw new Error("forbidden"); return {ok:true,users:listAssignableUsers_(user,req.excludeUserId)}; });
-    if (action === "notification_list") return withSession_(req.token, function (user) { const page=listNotifications_(user,req.cursor); return {ok:true,notifications:page.items,nextCursor:page.nextCursor,hasMore:page.hasMore,unreadCount:page.unreadCount}; });
+    if (action === "notification_list") return withSession_(req.token, function (user) { const page=listNotifications_(user,req.cursor); return {ok:true,notifications:page.items,nextCursor:page.nextCursor,hasMore:page.hasMore,unreadCount:page.unreadCount,totalCount:page.totalCount}; });
     if (action === "notification_read") return withSession_(req.token, function (user) { return { ok: true, read: markNotificationRead_(user, req.notificationId) }; });
     if (action === "leader_users") return withSession_(req.token, function (user) { if(!isAdmin_(user)&&!isLeader_(user))throw new Error("forbidden"); return { ok: true, users: listAssignableUsers_(user, req.excludeUserId) }; });
     throw new Error("invalid_action");
@@ -535,10 +535,10 @@ function listNotifications_(u,cursor){
  const start=Math.max(2,last-9999),rows=sh.getRange(start,1,last-start+1,9).getValues();
  let items=rows.filter(r=>String(r[1])===String(u.values[0])).map(r=>({id:String(r[0]),assignmentId:String(r[2]||""),type:String(r[3]||""),title:String(r[4]||""),body:String(r[5]||""),isRead:r[6]===true||String(r[6])==="TRUE",createdAt:String(r[7]||"")}));
  items.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)||b.id.localeCompare(a.id));
- const unreadCount=items.filter(x=>!x.isRead).length;
+ const totalCount=items.length,unreadCount=items.filter(x=>!x.isRead).length;
  if(cursor){const parts=String(cursor).split("|"),time=parts[0]||"",id=parts.slice(1).join("|");items=items.filter(x=>x.createdAt<time||(x.createdAt===time&&x.id<id));}
  const hasMore=items.length>100,page=items.slice(0,100),lastItem=page[page.length-1];
- return {items:page,nextCursor:hasMore&&lastItem?lastItem.createdAt+"|"+lastItem.id:"",hasMore:hasMore,unreadCount:unreadCount};
+ return {items:page,nextCursor:hasMore&&lastItem?lastItem.createdAt+"|"+lastItem.id:"",hasMore:hasMore,unreadCount:unreadCount,totalCount:totalCount};
 }
 function markNotificationRead_(u,id){
  const sh=notificationSheet_(),last=sh.getLastRow();if(last<2)throw new Error("user_not_found");
