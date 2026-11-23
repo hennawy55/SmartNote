@@ -8,6 +8,9 @@ const manifest = JSON.parse(read('manifest.json'));
 const worker = read('sw.js');
 
 assert(app.includes("action:'assignment_history'"), 'Activity history must load on demand');
+assert(app.includes("refreshUnifiedNotifications(loadOlder=false)") && app.includes("notificationLoadMore"), 'Notification history must support pagination');
+assert(app.includes("alert.isRead=true") && !app.includes("removeTaskAlert(key);"), 'Opening a reminder must mark it read without deleting it');
+assert(backend.includes("nextCursor") && backend.includes("function listNotifications_(u,cursor)"), 'Backend notification history must use a cursor');
 assert(app.includes("action:'assignment_targets'"), 'Transferred assignment owner must have scoped reassignment targets');
 assert(app.includes("action:'reassignment_targets'"), 'Assignee reassignment request must use a scoped endpoint');
 assert(app.includes("Date.now()-lastVisibleSyncAt>=30000"), 'Cloud polling must be throttled to 30 seconds');
