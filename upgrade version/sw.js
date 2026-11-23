@@ -1,4 +1,4 @@
-const CACHE = 'smartnote-offline-shell-v24';
+const CACHE = 'smartnote-offline-shell-v25';
 const ASSETS = [
   './index.html',
   './styles.css',
@@ -6,7 +6,8 @@ const ASSETS = [
   './theme.js',
   './language.js',
   './manifest.json',
-  './lucide.min.js'
+  './lucide.min.js',
+  './icons/smartnote-icon.svg'
 ];
 
 self.addEventListener('install', event => {
