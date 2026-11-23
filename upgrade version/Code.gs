@@ -41,6 +41,19 @@ function doPost(e) {
     if (action === "admin_role") return withAdmin_(req.token, function (admin) { return { ok: true, updated: setUserRole_(req.userId, req.role, admin.values[0]) }; });
     if (action === "admin_reset_password") return withAdmin_(req.token, function () { resetPassword_(req.userId, req.password); return { ok: true }; });
     if (action === "admin_delete") return withAdmin_(req.token, function () { deleteUser_(req.userId); return { ok: true }; });
+    if (action === "assignment_list") return withSession_(req.token, function (user) { return { ok: true, assignments: listAssignments_(user) }; });
+    if (action === "assignment_create") return withSession_(req.token, function (user) { return { ok: true, assignment: createAssignment_(user, req) }; });
+    if (action === "assignment_update") return withSession_(req.token, function (user) { return { ok: true, assignment: updateAssignment_(user, req) }; });
+    if (action === "assignment_status") return withSession_(req.token, function (user) { return { ok: true, assignment: updateAssignmentStatus_(user, req) }; });
+    if (action === "assignment_archive") return withSession_(req.token, function (user) { return { ok: true, archived: archiveAssignment_(user, req.assignmentId, true) }; });
+    if (action === "assignment_restore") return withSession_(req.token, function (user) { return { ok: true, restored: archiveAssignment_(user, req.assignmentId, false) }; });
+    if (action === "reassignment_request") return withSession_(req.token, function (user) { return { ok: true, request: requestReassignment_(user, req) }; });
+    if (action === "reassignment_review") return withSession_(req.token, function (user) { return { ok: true, request: reviewReassignment_(user, req) }; });
+    if (action === "assignment_note_add") return withSession_(req.token, function (user) { return { ok: true, note: addAssignmentNote_(user, req) }; });
+    if (action === "assignment_detail") return withSession_(req.token, function (user) { return { ok: true, assignment: assignmentDetail_(user, req.assignmentId) }; });
+    if (action === "notification_list") return withSession_(req.token, function (user) { return { ok: true, notifications: listNotifications_(user) }; });
+    if (action === "notification_read") return withSession_(req.token, function (user) { return { ok: true, read: markNotificationRead_(user, req.notificationId) }; });
+    if (action === "leader_users") return withSession_(req.token, function (user) { return { ok: true, users: listAssignableUsers_(user) }; });
     throw new Error("invalid_action");
   } catch (err) {
     return json_({ error: safeError_(err) });
@@ -52,7 +65,7 @@ function json_(obj) {
 }
 function safeError_(err) {
   const msg = String(err && err.message || "server_error");
-  return /^(invalid_|unauthorized$|forbidden$|inactive_user$|username_exists$|bootstrap_disabled$|bootstrap_already_used$|weak_password$|user_not_found$|cannot_disable_self$|cannot_delete_self$|database_too_large$|database_not_configured$|server_error$)/.test(msg) ? msg : "server_error";
+  return /^(invalid_|request_pending$|request_not_pending$|cannot_change_own_role$|unauthorized$|forbidden$|inactive_user$|username_exists$|bootstrap_disabled$|bootstrap_already_used$|weak_password$|user_not_found$|cannot_disable_self$|cannot_delete_self$|database_too_large$|database_not_configured$|server_error$)/.test(msg) ? msg : "server_error";
 }
 function book_() {
   const id = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID");
@@ -283,6 +296,83 @@ function deleteUser_(id) {
   const u = findUserById_(String(id)); if (!u) throw new Error("user_not_found");
   users_().deleteRow(u.row); revokeUserSessions_(id);
 }
+
+
+/* Assignment workflow */
+function assignmentSheet_(){return sheet_("Assignments",UPGRADE_SHEETS.Assignments);}
+function activitySheet_(){return sheet_("AssignmentActivity",UPGRADE_SHEETS.AssignmentActivity);}
+function requestSheet_(){return sheet_("ReassignmentRequests",UPGRADE_SHEETS.ReassignmentRequests);}
+function notesSheet_(){return sheet_("AssignmentNotes",UPGRADE_SHEETS.AssignmentNotes);}
+function notificationSheet_(){return sheet_("Notifications",UPGRADE_SHEETS.Notifications);}
+function rowObject_(headers,row){const o={};headers.forEach((h,i)=>o[h]=row[i]);return o;}
+function assignmentRows_(){const sh=assignmentSheet_(),v=sh.getDataRange().getValues();return v.length<2?[]:v.slice(1).map((r,i)=>({row:i+2,data:rowObject_(UPGRADE_SHEETS.Assignments,r)}));}
+function assignmentById_(id){const x=assignmentRows_().find(x=>String(x.data.AssignmentID)===String(id));return x||null;}
+function isAdmin_(u){return String(u.values[4])==="admin";}
+function isLeader_(u){return String(u.values[4])==="leader";}
+function canManageAssignment_(u,a){return isAdmin_(u)||String(a.CreatedBy)===String(u.values[0])||String(a.OwnerLeaderID)===String(u.values[0]);}
+function canSeeAssignment_(u,a){return canManageAssignment_(u,a)||String(a.AssigneeID)===String(u.values[0]);}
+function assertAssignmentAccess_(u,a,manage){if(!a||(!canSeeAssignment_(u,a))||(manage&&!canManageAssignment_(u,a)))throw new Error("forbidden");}
+function activity_(id,u,action,details){activitySheet_().appendRow([Utilities.getUuid(),id,String(u.values[0]),String(u.values[1]),action,JSON.stringify(details||{}),new Date().toISOString()]);}
+function notify_(userId,assignmentId,type,title,body){if(!userId)return;notificationSheet_().appendRow([Utilities.getUuid(),userId,assignmentId||"",type,title,body,false,new Date().toISOString(),""]);}
+function assignmentPublic_(a){return {id:String(a.AssignmentID),title:String(a.Title||""),description:String(a.Description||""),status:String(a.Status||"new"),priority:String(a.Priority||"normal"),dueAt:String(a.DueAt||""),createdAt:String(a.CreatedAt||""),assignedAt:String(a.AssignedAt||""),updatedAt:String(a.UpdatedAt||""),createdBy:String(a.CreatedBy||""),createdByName:String(a.CreatedByName||""),ownerLeaderId:String(a.OwnerLeaderID||""),ownerLeaderName:String(a.OwnerLeaderName||""),assigneeId:String(a.AssigneeID||""),assigneeName:String(a.AssigneeName||""),archivedAt:String(a.ArchivedAt||""),viewedAt:String(a.ViewedAt||"")};}
+function listAssignments_(u){return assignmentRows_().filter(x=>canSeeAssignment_(u,x.data)).map(x=>assignmentPublic_(x.data));}
+function listAssignableUsers_(u){if(!isAdmin_(u)&&!isLeader_(u))throw new Error("forbidden");return listUsers_().filter(x=>x.status==="active").map(x=>({id:x.id,username:x.username,role:x.role}));}
+function createAssignment_(u,req){
+ if(!isAdmin_(u)&&!isLeader_(u))throw new Error("forbidden");
+ const title=String(req.title||"").trim();if(!title||title.length>180)throw new Error("invalid_title");
+ const target=findUserById_(String(req.assigneeId||""));if(!target||String(target.values[5])!=="active")throw new Error("user_not_found");
+ const id=Utilities.getUuid(),now=new Date().toISOString(),leader=isLeader_(u)?u:findUserById_(String(u.values[0]));
+ const ownerId=String(u.values[0]),ownerName=String(u.values[1]);
+ const a={AssignmentID:id,Title:title,Description:String(req.description||"").slice(0,5000),Status:"new",Priority:["low","normal","high","urgent"].includes(req.priority)?req.priority:"normal",DueAt:String(req.dueAt||""),CreatedAt:now,AssignedAt:now,UpdatedAt:now,CreatedBy:String(u.values[0]),CreatedByName:String(u.values[1]),OwnerLeaderID:ownerId,OwnerLeaderName:ownerName,AssigneeID:String(target.values[0]),AssigneeName:String(target.values[1]),ArchivedAt:"",ViewedAt:""};
+ assignmentSheet_().appendRow(UPGRADE_SHEETS.Assignments.map(k=>a[k]));activity_(id,u,"created",{assignee:a.AssigneeName});notify_(a.AssigneeID,id,"assigned","متابعة جديدة",title+" — تم إسناد متابعة إليك");
+ return assignmentPublic_(a);
+}
+function updateAssignment_(u,req){
+ const x=assignmentById_(req.assignmentId);if(!x)throw new Error("user_not_found");const a=x.data;assertAssignmentAccess_(u,a,true);
+ const sh=assignmentSheet_(),patch=req.patch||{},allowed=["Title","Description","Priority","DueAt"];
+ allowed.forEach(k=>{if(Object.prototype.hasOwnProperty.call(patch,k)){if(k==="Title"&&!String(patch[k]).trim())throw new Error("invalid_title");a[k]=String(patch[k]).slice(0,k==="Description"?5000:180);}});
+ a.UpdatedAt=new Date().toISOString();sh.getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>a[k])]);activity_(a.AssignmentID,u,"updated",patch);return assignmentPublic_(a);
+}
+function updateAssignmentStatus_(u,req){
+ const x=assignmentById_(req.assignmentId);if(!x)throw new Error("user_not_found");const a=x.data;assertAssignmentAccess_(u,a,false);
+ const status=String(req.status||"");if(!["new","viewed","in_progress","paused","completed","cancelled"].includes(status))throw new Error("invalid_status");
+ a.Status=status;a.UpdatedAt=new Date().toISOString();if(!a.ViewedAt&&String(u.values[0])===String(a.AssigneeID)){a.ViewedAt=a.UpdatedAt;activity_(a.AssignmentID,u,"viewed",{});}
+ assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>a[k])]);activity_(a.AssignmentID,u,"status_changed",{status:status});if(status==="completed"){notify_(a.OwnerLeaderID,a.AssignmentID,"completed","تم إغلاق المتابعة",a.Title+" — تم إغلاقها");}return assignmentPublic_(a);
+}
+function archiveAssignment_(u,id,archive){const x=assignmentById_(id);if(!x)throw new Error("user_not_found");assertAssignmentAccess_(u,x.data,true);x.data.ArchivedAt=archive?new Date().toISOString():"";x.data.UpdatedAt=new Date().toISOString();assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>x.data[k])]);activity_(id,u,archive?"archived":"restored",{});return true;}
+function requestReassignment_(u,req){
+ const x=assignmentById_(req.assignmentId);if(!x)throw new Error("user_not_found");const a=x.data;assertAssignmentAccess_(u,a,false);
+ if(String(a.AssigneeID)!==String(u.values[0]))throw new Error("forbidden");
+ const target=findUserById_(String(req.toUserId||"")),reason=String(req.reason||"").trim();if(!target||String(target.values[5])!=="active")throw new Error("user_not_found");if(!reason)throw new Error("invalid_reason");
+ const pending=requestSheet_().getDataRange().getValues().slice(1).some(r=>String(r[1])===String(a.AssignmentID)&&String(r[7])==="pending");if(pending)throw new Error("request_pending");
+ const now=new Date().toISOString(),id=Utilities.getUuid();requestSheet_().appendRow([id,a.AssignmentID,String(u.values[0]),String(u.values[1]),String(target.values[0]),String(target.values[1]),reason,"pending",now,"","",""]);
+ activity_(a.AssignmentID,u,"reassignment_requested",{to:target.values[1],reason});notify_(a.OwnerLeaderID,a.AssignmentID,"reassignment_request","طلب إعادة إسناد",a.Title+" — "+reason);return {id:id,status:"pending"};
+}
+function reviewReassignment_(u,req){
+ const id=String(req.requestId||""),sh=requestSheet_(),rows=sh.getDataRange().getValues();let row=-1,r;
+ for(let i=1;i<rows.length;i++)if(String(rows[i][0])===id){row=i+1;r=rows[i];break;}
+ if(row<0)throw new Error("user_not_found");const x=assignmentById_(r[1]);if(!x)throw new Error("user_not_found");assertAssignmentAccess_(u,x.data,true);
+ if(String(x.data.OwnerLeaderID)!==String(u.values[0])&&!isAdmin_(u))throw new Error("forbidden");if(String(r[7])!=="pending")throw new Error("request_not_pending");
+ const approve=req.approve===true,now=new Date().toISOString();sh.getRange(row,8,1,5).setValues([[approve?"approved":"rejected",now,String(u.values[0]),String(u.values[1]),""]]);
+ if(approve){const target=findUserById_(String(r[4]));if(!target||String(target.values[5])!=="active")throw new Error("user_not_found");x.data.AssigneeID=String(target.values[0]);x.data.AssigneeName=String(target.values[1]);x.data.OwnerLeaderID=String(target.values[0]);x.data.OwnerLeaderName=String(target.values[1]);x.data.AssignedAt=now;x.data.UpdatedAt=now;assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>x.data[k])]);notify_(x.data.AssigneeID,x.data.AssignmentID,"assigned","متابعة محولة إليك",x.data.Title);}
+ activity_(x.data.AssignmentID,u,approve?"reassignment_approved":"reassignment_rejected",{requestId:id});notify_(r[2],x.data.AssignmentID,"reassignment_result",approve?"تمت الموافقة على النقل":"تم رفض النقل",x.data.Title);return {id:id,status:approve?"approved":"rejected"};
+}
+function addAssignmentNote_(u,req){
+ const x=assignmentById_(req.assignmentId);if(!x)throw new Error("user_not_found");assertAssignmentAccess_(u,x.data,false);
+ const visibility=req.visibility==="shared"?"shared":"private",body=String(req.body||"").trim();if(!body)throw new Error("invalid_note");
+ if(visibility==="shared"&&!canManageAssignment_(u,x.data)&&String(u.values[0])!==String(x.data.AssigneeID))throw new Error("forbidden");
+ const now=new Date().toISOString(),id=Utilities.getUuid();notesSheet_().appendRow([id,x.data.AssignmentID,String(u.values[0]),String(u.values[1]),visibility,body,now,now]);activity_(x.data.AssignmentID,u,"note_added",{visibility:visibility});return {id:id,visibility:visibility,body:body,createdAt:now};
+}
+function assignmentDetail_(u,id){
+ const x=assignmentById_(id);if(!x)throw new Error("user_not_found");assertAssignmentAccess_(u,x.data,false);
+ if(!x.data.ViewedAt&&String(x.data.AssigneeID)===String(u.values[0])){x.data.ViewedAt=new Date().toISOString();if(x.data.Status==="new")x.data.Status="viewed";x.data.UpdatedAt=x.data.ViewedAt;assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>x.data[k])]);activity_(id,u,"viewed",{});}
+ const notes=notesSheet_().getDataRange().getValues().slice(1).filter(r=>String(r[1])===String(id)&&(String(r[4])==="shared"||String(r[2])===String(u.values[0]))).map(r=>({id:r[0],authorId:r[2],authorName:r[3],visibility:r[4],body:r[5],createdAt:r[6]}));
+ const activity=activitySheet_().getDataRange().getValues().slice(1).filter(r=>String(r[1])===String(id)).map(r=>({actorName:r[3],action:r[4],details:(()=>{try{return JSON.parse(r[5]||"{}")}catch(e){return {}}})(),createdAt:r[6]}));
+ const requests=requestSheet_().getDataRange().getValues().slice(1).filter(r=>String(r[1])===String(id)&&(isAdmin_(u)||String(r[2])===String(u.values[0])||String(x.data.OwnerLeaderID)===String(u.values[0]))).map(r=>({id:r[0],fromUserName:r[3],toUserName:r[5],reason:r[6],status:r[7],requestedAt:r[8]}));
+ return { ...assignmentPublic_(x.data),notes:notes,activity:activity,requests:requests };
+}
+function listNotifications_(u){return notificationSheet_().getDataRange().getValues().slice(1).filter(r=>String(r[1])===String(u.values[0])).map(r=>({id:r[0],assignmentId:r[2],type:r[3],title:r[4],body:r[5],isRead:r[6]===true||String(r[6])==="TRUE",createdAt:r[7]})).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));}
+function markNotificationRead_(u,id){const sh=notificationSheet_(),rows=sh.getDataRange().getValues();for(let i=1;i<rows.length;i++)if(String(rows[i][0])===String(id)&&String(rows[i][1])===String(u.values[0])){sh.getRange(i+1,7).setValue(true);sh.getRange(i+1,9).setValue(new Date().toISOString());return true;}throw new Error("user_not_found");}
 
 function setUserRole_(id, role, adminId) {
   if (!["admin", "leader", "user"].includes(role)) throw new Error("invalid_role");
