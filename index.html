@@ -72,7 +72,7 @@
   </div>
 </div>
 <div class="toast" id="toast"></div>
-<script src="./native-notifications.bundle.js"></script>
+<script>if(window.Capacitor&&typeof window.Capacitor.isNativePlatform==="function"&&window.Capacitor.isNativePlatform()){document.write('<script src="./native-notifications.bundle.js"><\/script>')}</script>
 <script src="./app.js"></script>
 </body>
 </html>
