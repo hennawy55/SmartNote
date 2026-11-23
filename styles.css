@@ -289,3 +289,26 @@ html[lang="en"] .online-gate{text-align:center}
   .admin-password-row{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
   .admin-password-row .btn{width:100%}
 }
+
+/* Direction-aware login and admin overlays */
+html[dir="ltr"] .login-card,
+html[dir="ltr"] .admin-shell{direction:ltr;text-align:left}
+html[dir="ltr"] .login-brand{direction:ltr;text-align:left}
+html[dir="ltr"] .login-form,
+html[dir="ltr"] .login-field{text-align:left}
+html[dir="ltr"] .login-input-wrap{direction:ltr}
+html[dir="ltr"] .login-input-wrap input{text-align:left}
+html[dir="ltr"] .login-submit{direction:ltr}
+html[dir="ltr"] .admin-header{direction:ltr}
+html[dir="ltr"] .admin-header h2{flex-direction:row}
+html[dir="ltr"] .admin-create-form,
+html[dir="ltr"] .admin-user-card,
+html[dir="ltr"] .admin-user-controls{direction:ltr;text-align:left}
+html[dir="ltr"] .admin-create-form label,
+html[dir="ltr"] .admin-user-controls label{text-align:left}
+html[dir="ltr"] .admin-password-row{direction:ltr}
+@media(max-width:700px){
+  html[dir="ltr"] .admin-create-form,
+  html[dir="ltr"] .admin-users-list,
+  html[dir="ltr"] .admin-user-controls{direction:ltr}
+}
