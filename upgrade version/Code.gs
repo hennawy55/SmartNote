@@ -41,7 +41,7 @@ function doPost(e) {
     if (action === "admin_status") return withAdmin_(req.token, function () { return { ok: true, updated: setUserStatus_(req.userId, req.status) }; });
     if (action === "admin_role") return withAdmin_(req.token, function (admin) { return { ok: true, updated: setUserRole_(req.userId, req.role, admin.values[0]) }; });
     if (action === "admin_reset_password") return withAdmin_(req.token, function () { resetPassword_(req.userId, req.password); return { ok: true }; });
-    if (action === "admin_delete") return withAdmin_(req.token, function () { deleteUser_(req.userId); return { ok: true }; });
+    if (action === "admin_delete") return withAdmin_(req.token, function (admin) { if(String(req.userId)===String(admin.values[0]))throw new Error("cannot_delete_self"); deleteUser_(req.userId); return { ok: true }; });
     if (action === "assignment_list") return withSession_(req.token, function (user) { return { ok: true, assignments: listAssignments_(user) }; });
     if (action === "assignment_create") return withSession_(req.token, function (user) { return { ok: true, assignment: createAssignment_(user, req) }; });
     if (action === "assignment_reassign") return withSession_(req.token, function (user) { return { ok: true, assignment: reassignAssignment_(user, req) }; });
@@ -68,8 +68,8 @@ function json_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 function safeError_(err) {
-  const msg = String(err && err.message || "server_error");
-  return /^(invalid_|same_assignee$|request_pending$|request_not_pending$|cannot_change_own_role$|unauthorized$|forbidden$|inactive_user$|username_exists$|bootstrap_disabled$|bootstrap_already_used$|weak_password$|user_not_found$|cannot_disable_self$|cannot_delete_self$|database_too_large$|database_not_configured$|server_error$)/.test(msg) ? msg : "server_error";
+  const msg=String(err&&err.message||"server_error");
+  return /^(invalid_|same_assignee$|request_pending$|request_not_pending$|cannot_change_own_role$|cannot_delete_self$|unauthorized$|forbidden$|inactive_user$|username_exists$|bootstrap_disabled$|bootstrap_already_used$|weak_password$|user_not_found$|cannot_disable_self$|database_too_large$|database_not_configured$|user_has_active_assignments$|user_has_pending_requests$|user_manages_active_assignments$|operation_in_progress$|too_many_attempts$|server_error$)/.test(msg)?"server_error"===msg?msg:msg:"server_error";
 }
 function book_() {
   const id = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID");
@@ -167,8 +167,9 @@ function hashPassword_(password, salt) {
 }
 function validPassword_(p) { return typeof p === "string" && p.length >= 10 && p.length <= 128; }
 function findUser_(username) {
-  const sh = users_(), values = sh.getDataRange().getValues();
-  for (let i = 1; i < values.length; i++) if (String(values[i][1]).toLowerCase() === String(username).toLowerCase()) return { row: i + 1, values: values[i] };
+  const sh=users_(),last=sh.getLastRow();if(last<2)return null;
+  const values=sh.getRange(2,1,last-1,8).getValues();
+  for(let i=0;i<values.length;i++)if(String(values[i][1]).toLowerCase()===String(username).toLowerCase())return {row:i+2,values:values[i].concat([""])};
   return null;
 }
 function publicUser_(u) { return { id: String(u.values[0]), username: String(u.values[1]), role: String(u.values[4]), status: String(u.values[5]), mustChangePassword: u.values[7] === true || String(u.values[7]).toUpperCase() === "TRUE" }; }
@@ -221,13 +222,15 @@ function insertUser_(username, password, role) {
   return { row: row, values: sh.getRange(row, 1, 1, 9).getValues()[0] };
 }
 function login_(req) {
-  const username = cleanUsername_(req.username), found = findUser_(username);
-  if (!found || String(found.values[5]) !== "active" || hashPassword_(String(req.password || ""), String(found.values[3])) !== String(found.values[2])) throw new Error("unauthorized");
-  const token = randomHex_(32), sh = sessions_(), now = new Date(), expiry = new Date(now.getTime() + SESSION_DAYS * 86400000);
-  const tokenHash = hashToken_(token), expiresAt = expiry.toISOString();
-  sh.appendRow([tokenHash, String(found.values[0]), expiresAt, now.toISOString()]);
-  cacheSession_(tokenHash, found, expiresAt);
-  return json_({ ok: true, token: token, user: publicUser_(found), data: readDatabase_(found.row) });
+  const username=cleanUsername_(req.username),cache=CacheService.getScriptCache(),attemptKey="smartnote_login_fail_"+hashToken_(username.toLowerCase()),attempts=Number(cache.get(attemptKey)||0);
+  if(attempts>=5)throw new Error("too_many_attempts");
+  const found=findUser_(username),valid=found&&String(found.values[5])==="active"&&hashPassword_(String(req.password||""),String(found.values[3]))===String(found.values[2]);
+  if(!valid){cache.put(attemptKey,String(attempts+1),900);throw new Error("unauthorized");}
+  cache.remove(attemptKey);
+  const token=randomHex_(32),sh=sessions_(),now=new Date(),expiry=new Date(now.getTime()+SESSION_DAYS*86400000),tokenHash=hashToken_(token),expiresAt=expiry.toISOString();
+  sh.appendRow([tokenHash,String(found.values[0]),expiresAt,now.toISOString(),now.toISOString(),String(req.deviceLabel||"")]);
+  cacheSession_(tokenHash,found,expiresAt);
+  return json_({ok:true,token:token,user:publicUser_(found),data:readDatabase_(found.row)});
 }
 function sessionCacheKey_(tokenHash) { return "smartnote_session_" + tokenHash; }
 function cacheSession_(tokenHash, user, expiresAt) {
@@ -289,18 +292,17 @@ function readDatabase_(row) {
   try{return JSON.parse(joined||"{}");}catch(_){throw new Error("invalid_saved_data");}
 }
 function writeDatabase_(row,json) {
-  const parts=splitSafe_(json);
-  if(parts.length>100)throw new Error("database_too_large");
-  const sh=users_(),startCol=9;
-  const oldWidth=Math.max(1,sh.getLastColumn()-startCol+1),width=Math.max(oldWidth,parts.length);
-  const values=[Array(width).fill("")];
-  for(let i=0;i<parts.length;i++)values[0][i]=parts[i];
-  sh.getRange(row,startCol,1,width).setNumberFormat("@").setValues(values);
-  sh.getRange(row,7).setValue(new Date().toISOString());
+  return withScriptLock_(function(){
+    const parts=splitSafe_(json);if(parts.length>100)throw new Error("database_too_large");
+    const sh=users_(),startCol=9,oldWidth=Math.max(1,sh.getLastColumn()-startCol+1),width=Math.max(oldWidth,parts.length),values=[Array(width).fill("")];
+    for(let i=0;i<parts.length;i++)values[0][i]=parts[i];
+    sh.getRange(row,startCol,1,width).setNumberFormat("@").setValues(values);sh.getRange(row,7).setValue(new Date().toISOString());
+  });
 }
 function listUsers_() {
-  const sh = users_(), rows = sh.getDataRange().getValues();
-  return rows.slice(1).map((r, i) => ({ id: String(r[0]), username: String(r[1]), role: String(r[4]), status: String(r[5]), updatedAt: String(r[6]), row: i + 2 }));
+  const sh=users_(),last=sh.getLastRow();if(last<2)return [];
+  const rows=sh.getRange(2,1,last-1,8).getValues();
+  return rows.map((r,i)=>({id:String(r[0]),username:String(r[1]),role:String(r[4]),status:String(r[5]),updatedAt:String(r[6]),row:i+2}));
 }
 function createUser_(req) {
   const username = cleanUsername_(req.username);
@@ -313,12 +315,12 @@ function setUserStatus_(id, status) {
   const u = findUserById_(String(id)); if (!u) throw new Error("user_not_found");
   u.values[5] = status; users_().getRange(u.row, 6).setValue(status); if (status !== "active") revokeUserSessions_(id); return true;
 }
-function resetPassword_(id, password) {
-  if (!validPassword_(password)) throw new Error("weak_password");
-  const u = findUserById_(String(id)); if (!u) throw new Error("user_not_found");
-  const salt = randomHex_(16), sh = users_();
-  sh.getRange(u.row, 3, 1, 2).setValues([[hashPassword_(password, salt), salt]]);
-  revokeUserSessions_(id);
+function resetPassword_(id,password) {
+  if(!validPassword_(password))throw new Error("weak_password");
+  const u=findUserById_(String(id));if(!u)throw new Error("user_not_found");
+  const salt=randomHex_(16),sh=users_();
+  sh.getRange(u.row,3,1,2).setValues([[hashPassword_(password,salt),salt]]);
+  sh.getRange(u.row,8).setValue(true);revokeUserSessions_(id);
 }
 function changeOwnPassword_(u,oldPassword,newPassword){
  if(!validPassword_(newPassword))throw new Error("weak_password");
@@ -356,7 +358,7 @@ function activity_(id,u,action,details){activitySheet_().appendRow([Utilities.ge
 function notify_(userId,assignmentId,type,title,body){if(!userId)return;notificationSheet_().appendRow([Utilities.getUuid(),userId,assignmentId||"",type,title,body,false,new Date().toISOString(),""]);}
 function assignmentPublic_(a){const type=String(a.Type||"task"),clientName=String(a.ClientName||"");let title=String(a.Title||"");if(type==="client"){title=clientName||title.replace(/^متابعة عميل\s*:\s*/,"");}return {id:String(a.AssignmentID),title:title,description:String(a.Description||""),type:type,clientName:clientName,clientPhone:String(a.ClientPhone||""),status:String(a.Status||"new"),priority:String(a.Priority||"normal"),dueAt:String(a.DueAt||""),createdAt:String(a.CreatedAt||""),assignedAt:String(a.AssignedAt||""),updatedAt:String(a.UpdatedAt||""),createdBy:String(a.CreatedBy||""),createdByName:String(a.CreatedByName||""),ownerLeaderId:String(a.OwnerLeaderID||""),ownerLeaderName:String(a.OwnerLeaderName||""),assigneeId:String(a.AssigneeID||""),assigneeName:String(a.AssigneeName||""),archivedAt:String(a.ArchivedAt||""),viewedAt:String(a.ViewedAt||"")};}
 function listAssignments_(u){return assignmentRows_().filter(x=>canSeeAssignment_(u,x.data)).map(x=>assignmentPublic_(x.data));}
-function listAssignableUsers_(u,excludeId){const excluded=new Set([String(u.values[0]),String(excludeId||"")]);return listUsers_().filter(x=>x.status==="active"&&!excluded.has(x.id)&&(!isLeader_(u)||x.role!=="admin")).map(x=>({id:x.id,username:x.username,role:x.role}));}
+function listAssignableUsers_(u,excludeId){const excluded=new Set([String(u.values[0]),String(excludeId||"")]);return listUsers_().filter(x=>x.status==="active"&&!excluded.has(x.id)&&(isAdmin_(u)||x.role!=="admin")).map(x=>({id:x.id,username:x.username,role:x.role}));}
 function createAssignment_(u,req){
  return withScriptLock_(function(){
  if(!isAdmin_(u)&&!isLeader_(u))throw new Error("forbidden");
@@ -375,7 +377,7 @@ function reassignAssignment_(u,req){
  const x=assignmentById_(req.assignmentId);if(!x)throw new Error("user_not_found");const a=x.data;assertAssignmentAccess_(u,a,true);
  if(!canManageAssignment_(u,a))throw new Error("forbidden");
  const target=findUserById_(String(req.toUserId||""));
- if(!target||String(target.values[5])!=="active"||String(target.values[0])===String(u.values[0])||(isLeader_(u)&&String(target.values[4])==="admin"))throw new Error("user_not_found");
+ if(!target||String(target.values[5])!=="active"||String(target.values[0])===String(u.values[0])||(!isAdmin_(u)&&String(target.values[4])==="admin"))throw new Error("user_not_found");
  if(String(target.values[0])===String(a.AssigneeID))throw new Error("same_assignee");
  const previous=a.AssigneeName,previousId=a.AssigneeID,now=new Date().toISOString();a.AssigneeID=String(target.values[0]);a.AssigneeName=String(target.values[1]);a.AssignedAt=now;a.UpdatedAt=now;a.ViewedAt="";if(a.Status==="viewed")a.Status="new";
  assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>a[k])]);
@@ -419,12 +421,14 @@ function reviewReassignment_(u,req){
  const approve=req.approve===true,now=new Date().toISOString();let target=null;
  if(approve){target=findUserById_(String(r[4]));if(!target||String(target.values[5])!=="active")throw new Error("user_not_found");}
  // Validate the target before mutating either sheet row.
- if(approve){
+ const originalAssignment=JSON.parse(JSON.stringify(x.data));
+  if(approve){
    x.data.AssigneeID=String(target.values[0]);x.data.AssigneeName=String(target.values[1]);x.data.OwnerLeaderID=String(target.values[0]);x.data.OwnerLeaderName=String(target.values[1]);x.data.AssignedAt=now;x.data.UpdatedAt=now;x.data.ViewedAt="";
    if(x.data.Status==="viewed")x.data.Status="new";
    assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>x.data[k])]);
- }
- sh.getRange(row,8,1,5).setValues([[approve?"approved":"rejected",now,String(u.values[0]),String(u.values[1]),""]]);
+  }
+  try{sh.getRange(row,8,1,5).setValues([[approve?"approved":"rejected",now,String(u.values[0]),String(u.values[1]),""]]);}
+  catch(writeError){if(approve)assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>originalAssignment[k])]);throw writeError;}
  activity_(x.data.AssignmentID,u,approve?"reassignment_approved":"reassignment_rejected",{requestId:id,to:approve?target.values[1]:""});
  if(approve)notify_(x.data.AssigneeID,x.data.AssignmentID,"assigned","متابعة محولة إليك",x.data.Title);
  notify_(r[2],x.data.AssignmentID,"reassignment_result",approve?"تمت الموافقة على النقل":"تم رفض النقل",x.data.Title);
