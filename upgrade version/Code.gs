@@ -255,7 +255,16 @@ function cacheSession_(tokenHash, user, expiresAt) {
   const seconds = Math.max(1, Math.min(21600, Math.floor((Date.parse(expiresAt) - Date.now()) / 1000)));
   // Never put password hashes or salts in the shared script cache.
   const safeUser = { row: user.row, values: [String(user.values[0]), String(user.values[1]), "", "", String(user.values[4]), String(user.values[5]), String(user.values[6] || ""), String(user.values[7] || false), ""] };
-  if (seconds > 0) CacheService.getScriptCache().put(sessionCacheKey_(tokenHash), JSON.stringify({ user: safeUser, expiresAt: expiresAt }), seconds);
+  if (seconds > 0) CacheService.getScriptCache().put(sessionCacheKey_(tokenHash), JSON.stringify({ user: safeUser, expiresAt: expiresAt, lastSeenAt: Date.now() }), seconds);
+}
+function touchSession_(tokenHash,entry,key){
+  if(Date.now()-Number(entry.lastSeenAt||0)<300000)return;
+  const sh=sessions_(),last=sh.getLastRow();if(last<2){CacheService.getScriptCache().remove(key);throw new Error("unauthorized");}
+  const match=sh.getRange(2,1,last-1,1).createTextFinder(tokenHash).matchEntireCell(true).findNext();
+  if(!match){CacheService.getScriptCache().remove(key);throw new Error("unauthorized");}
+  const now=new Date().toISOString();sh.getRange(match.getRow(),5).setValue(now);entry.lastSeenAt=Date.now();
+  const seconds=Math.max(1,Math.min(21600,Math.floor((Date.parse(entry.expiresAt)-Date.now())/1000)));
+  CacheService.getScriptCache().put(key,JSON.stringify(entry),seconds);
 }
 function clearSessionCache_(tokenHash) {
   if (tokenHash) CacheService.getScriptCache().remove(sessionCacheKey_(tokenHash));
@@ -265,7 +274,7 @@ function sessionUser_(token) {
   if (!token || typeof token !== "string" || token.length < 32) throw new Error("unauthorized");
   const wanted=hashToken_(token),cache=CacheService.getScriptCache(),key=sessionCacheKey_(wanted),cached=cache.get(key);
   if(cached){
-    try{const entry=JSON.parse(cached);if(entry.expiresAt&&Date.parse(entry.expiresAt)>Date.now()&&entry.user&&String(entry.user.values[5])==="active")return {row:Number(entry.user.row),values:entry.user.values};}
+    try{const entry=JSON.parse(cached);if(entry.expiresAt&&Date.parse(entry.expiresAt)>Date.now()&&entry.user&&String(entry.user.values[5])==="active"){touchSession_(wanted,entry,key);return {row:Number(entry.user.row),values:entry.user.values};}}
     catch(_){cache.remove(key);}
   }
   const sh=sessions_(),last=sh.getLastRow();if(last<2)throw new Error("unauthorized");
@@ -283,7 +292,7 @@ function findUserById_(id) {
     .createTextFinder(String(id)).matchEntireCell(true).findNext();
   if (!match) return null;
   const row = match.getRow();
-  return { row: row, values: sh.getRange(row, 1, 1, 9).getValues()[0] };
+  return { row: row, values: sh.getRange(row, 1, 1, 8).getValues()[0].concat([""]) };
 }
 function withScriptLock_(fn) { const lock=LockService.getScriptLock(); if(!lock.tryLock(15000))throw new Error("operation_in_progress"); try{return fn();}finally{lock.releaseLock();} }
 function withSession_(token, fn) { return json_(fn(sessionUser_(token))); }
