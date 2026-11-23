@@ -10,6 +10,12 @@
   const QUICK_ACTIONS={workspaces:['workspace','مساحة جديدة'],projects:['project','مشروع جديد'],units:['unit','وحدة جديدة'],notes:['note','ملاحظة جديدة'],clients:['client','عميل جديد'],tasks:['task','متابعة جديدة']};
   const emptyDB=()=>({version:1,workspaces:[],projects:[],units:[],notes:[],clients:[],tasks:[]});
   let db=emptyDB(), editing=null, isReady=false, saveQueue=Promise.resolve(), syncInFlight=false, writesInProgress=0, localRevision=0;
+  const localDataKey=()=>`smartnote-local-db-v1:${encodeURIComponent(currentUser?.username||'')}`;
+  const pendingSyncKey=()=>`smartnote-pending-sync-v1:${encodeURIComponent(currentUser?.username||'')}`;
+  function cacheLocalDatabase(state=db,pending=false){if(!currentUser?.username)return;try{localStorage.setItem(localDataKey(),JSON.stringify(cloudPayload(state)));if(pending)localStorage.setItem(pendingSyncKey(),'1')}catch(error){toast('تعذر حفظ نسخة محلية: '+error.message)}}
+  function readLocalDatabase(){try{const raw=localStorage.getItem(localDataKey());return raw?normalizeDatabase(JSON.parse(raw)):null}catch{return null}}
+  function hasPendingSync(){try{return localStorage.getItem(pendingSyncKey())==='1'}catch{return false}}
+  function clearPendingSync(){try{localStorage.removeItem(pendingSyncKey())}catch{}}
   const notifiedTaskReminders=new Set(),taskAlerts=[],browserNotifications=new Map();
   const NOTIFICATION_STATE_KEY='smart-real-estate-task-notifications-v1';
   let notificationsSnoozedUntil=0,notificationAudio=null,serviceWorkerRegistration=null;
@@ -123,24 +129,24 @@
   document.getElementById('confirmAccept').onclick=()=>finishConfirm(true);document.getElementById('confirmCancel').onclick=()=>finishConfirm(false);document.getElementById('cancelConfirmClose').onclick=()=>finishConfirm(false);document.getElementById('confirmBackdrop').addEventListener('click',event=>{if(event.target.id==='confirmBackdrop')finishConfirm(false)});
   document.getElementById('closeModal').onclick=closeForm;document.getElementById('cancelModal').onclick=closeForm;document.getElementById('modalBackdrop').addEventListener('click',e=>{if(e.target.id==='modalBackdrop')closeForm()});
   document.getElementById('entityForm').addEventListener('submit',async e=>{
-    e.preventDefault();if(!editing)return;if(!isReady||!navigator.onLine){toast('لا يمكن الحفظ بدون اتصال بقاعدة البيانات');return}
+    e.preventDefault();if(!editing)return;if(!isReady){toast('يلزم تسجيل الدخول أولاً');return}
     const submit=e.target.querySelector('[type="submit"]');submit.disabled=true;submit.textContent='جاري الحفظ...';
     try{
       const {type,id}=editing,collection=TYPE_MAP[type],old=id?get(collection,id):{};
       const data=Object.fromEntries(new FormData(e.target).entries());if(type==='note')data.tags=(data.tags||'').split(',').map(x=>x.trim()).filter(Boolean);
       const now=new Date().toISOString(),record={...old,...data,id:id||uid(),createdAt:old?.createdAt||now,updatedAt:now};if(type==='task'){record.status=data.status||old?.status||'معلقة';record.startedAt=record.status==='قيد التنفيذ'?(old?.status===record.status?(old.startedAt||old.updatedAt||now):now):null}if(type==='workspace'&&!record.color)record.color='#5b8cff';
       const next={...db,[collection]:id?db[collection].map(x=>x.id===id?record:x):[record,...db[collection]]};
-      await saveDatabase(next);db=next;localRevision++;renderAll();syncNativeTaskReminders();closeForm();toast('تم حفظ البيانات على Google Sheets');
+      const result=await saveDatabase(next);db=next;localRevision++;cacheLocalDatabase(db,!navigator.onLine||!!result?.queued);renderAll();syncNativeTaskReminders();closeForm();toast(navigator.onLine&&!result?.queued?'تم حفظ البيانات على Google Sheets':'تم الحفظ على الجهاز وستتم المزامنة عند عودة الإنترنت');
     }catch(err){toast('فشل الحفظ: '+err.message)}finally{submit.disabled=false;submit.textContent='حفظ البيانات'}
   });
   async function deleteItem(type,id){
     const collection=TYPE_MAP[type]||type;if(!await confirmInApp('هل تريد حذف هذا السجل نهائياً من قاعدة البيانات؟'))return;
-    if(!isReady||!navigator.onLine){toast('لا يمكن الحذف بدون اتصال بقاعدة البيانات');return}
+    if(!isReady){toast('يلزم تسجيل الدخول أولاً');return}
     const next={...db,[collection]:db[collection].filter(x=>x.id!==id)};
-    try{await saveDatabase(next);db=next;localRevision++;renderAll();syncNativeTaskReminders();toast('تم حذف السجل من Google Sheets')}catch(err){toast('فشل الحذف: '+err.message)}
+    try{const result=await saveDatabase(next);db=next;localRevision++;cacheLocalDatabase(db,!navigator.onLine||!!result?.queued);renderAll();syncNativeTaskReminders();toast(navigator.onLine&&!result?.queued?'تم حذف السجل من Google Sheets':'تم الحذف محلياً وستتم المزامنة عند عودة الإنترنت')}catch(err){toast('فشل الحذف: '+err.message)}
   }
   async function changeTaskStatus(id,status,button){
-    if(!isReady||!navigator.onLine){toast('لا يمكن تغيير الحالة بدون اتصال بقاعدة البيانات');return}
+    if(!isReady){toast('يلزم تسجيل الدخول أولاً');return}
     const task=get('tasks',id);if(!task)return;
     const nextStatus=status==='قيد التنفيذ'?'مكتملة':status==='معلقة'?'قيد التنفيذ':null;
     if(!nextStatus)return;
@@ -149,7 +155,7 @@
     button.disabled=true;
     const now=new Date().toISOString(),record={...task,status:nextStatus,updatedAt:now,startedAt:nextStatus==='قيد التنفيذ'?now:null};
     const next={...db,tasks:db.tasks.map(item=>item.id===id?record:item)};
-    try{await saveDatabase(next);db=next;localRevision++;renderAll();syncNativeTaskReminders();toast(nextStatus==='قيد التنفيذ'?'بدأت المتابعة':'تم إنهاء المتابعة')}
+    try{const result=await saveDatabase(next);db=next;localRevision++;cacheLocalDatabase(db,!navigator.onLine||!!result?.queued);renderAll();syncNativeTaskReminders();toast(!navigator.onLine||result?.queued?'تم الحفظ محلياً وستتم المزامنة عند عودة الإنترنت':(nextStatus==='قيد التنفيذ'?'بدأت المتابعة':'تم إنهاء المتابعة'))}
     catch(err){button.disabled=false;toast('فشل تغيير حالة المتابعة: '+err.message)}
   }
   function emptyHTML(title,sub){return `<div class="empty"><b>${esc(title)}</b>${esc(sub)}</div>`}
@@ -181,20 +187,23 @@
   function cloudPayload(state){return {...state,spaces:state.workspaces||[]}}
   async function saveDatabase(nextState){
     const snapshot=cloudPayload(nextState);
+    cacheLocalDatabase(snapshot,true);
+    if(!navigator.onLine||!authToken)return {queued:true};
     writesInProgress++;
     saveQueue=saveQueue.catch(()=>{}).then(()=>apiPost({action:'save',data:snapshot}));
-    try{return await saveQueue}finally{writesInProgress--}
+    try{const result=await saveQueue;clearPendingSync();cacheLocalDatabase(snapshot,false);return result}finally{writesInProgress--}
   }
   function normalizeDatabase(data){const d=data&&typeof data==='object'?data:{};return {...emptyDB(),...d,workspaces:Array.isArray(d.workspaces)?d.workspaces:(Array.isArray(d.spaces)?d.spaces:[]),tasks:Array.isArray(d.tasks)?d.tasks.map(task=>task.status==='قيد التنفيذ'&&!task.startedAt?{...task,startedAt:task.updatedAt||task.createdAt||null}:task):[]};}
   async function syncCloud(){
     if(!isReady||!authToken||!navigator.onLine||document.hidden||editing||writesInProgress||syncInFlight)return;
     syncInFlight=true;const revision=localRevision;
     try{
+      if(hasPendingSync()){await apiPost({action:'save',data:cloudPayload(db)});clearPendingSync();cacheLocalDatabase(db,false)}
       const result=await apiPost({action:'load'});
       const remote=normalizeDatabase(result.data||{});
       if(revision!==localRevision||editing||writesInProgress)return;
       const dismissed=new Set([...(db.taskNotificationDismissals||[]),...(remote.taskNotificationDismissals||[])]);remote.taskNotificationDismissals=[...dismissed];
-      if(JSON.stringify(cloudPayload(remote))!==JSON.stringify(cloudPayload(db))){db=remote;renderAll();syncNativeTaskReminders()}
+      if(JSON.stringify(cloudPayload(remote))!==JSON.stringify(cloudPayload(db))){db=remote;cacheLocalDatabase(db,false);renderAll();syncNativeTaskReminders()}
       const removed=taskAlerts.filter(alert=>dismissed.has(alert.key));if(removed.length){removed.forEach(alert=>closeBrowserNotification(alert.key));for(let i=taskAlerts.length-1;i>=0;i--)if(dismissed.has(taskAlerts[i].key))taskAlerts.splice(i,1);persistTaskAlertState();renderTaskAlerts()}
       setConnection(true,'مزامنة تلقائية كل 5 ثوانٍ.');
     }catch(err){setConnection(false,'تعذر تحديث البيانات: '+err.message)}
@@ -219,7 +228,7 @@
     gate.style.display='flex';document.getElementById('loginError').textContent=message;
   }
   async function afterLogin(preloadedData){
-    const result=preloadedData&&typeof preloadedData==='object'?{data:preloadedData}:await apiPost({action:'load'});db=normalizeDatabase(result.data||{});isReady=true;localRevision=0;renderAll();syncNativeTaskReminders();// Login gate is created only for manual login; keep automatic session restore safe.
+    const result=preloadedData&&typeof preloadedData==='object'?{data:preloadedData}:await apiPost({action:'load'});db=normalizeDatabase(result.data||{});isReady=true;localRevision=0;cacheLocalDatabase(db,false);renderAll();syncNativeTaskReminders();// Login gate is created only for manual login; keep automatic session restore safe.
     document.getElementById('loginGate')?.style.setProperty('display','none');hideGate();setConnection(true,'تم تسجيل الدخول؛ المزامنة كل 5 ثوانٍ.');
     if(currentUser?.role==='admin') addAdminButton();
     if(!document.getElementById('logoutButton')){const b=document.createElement('button');b.id='logoutButton';b.className='btn small';b.textContent='تسجيل الخروج';b.onclick=async()=>{try{await apiPost({action:'logout'})}catch(_){}authToken='';currentUser=null;isReady=false;localStorage.removeItem(SESSION_KEY);showLogin('تم تسجيل الخروج.');document.getElementById('adminUsersButton')?.remove();b.remove()};document.querySelector('.top-actions').prepend(b)}
@@ -265,7 +274,7 @@
   async function initializeCloud(){
     const saved=localStorage.getItem(SESSION_KEY);
     if(!navigator.onLine){
-      if(saved){setConnection(false,'لا يوجد اتصال؛ سيتم استعادة جلستك عند عودة الإنترنت.');return}
+      if(saved){try{const s=JSON.parse(saved);authToken=s.token||'';currentUser=s.user||null;const cached=readLocalDatabase();if(authToken&&cached){db=cached;isReady=true;renderAll();hideGate();setConnection(false,'أنت تعمل دون اتصال. ستتم المزامنة عند عودة الإنترنت.');return}}catch{}setConnection(false,'لا يوجد اتصال؛ سيتم استعادة جلستك عند عودة الإنترنت.');return}
       showLogin('اتصل بالإنترنت لتسجيل الدخول.');return;
     }
     if(saved){
@@ -275,6 +284,7 @@
           const session=await apiPost({action:'me'});
           currentUser=session.user||currentUser;
           localStorage.setItem(SESSION_KEY,JSON.stringify({token:authToken,user:currentUser}));
+          if(hasPendingSync()){const local=readLocalDatabase();if(local){db=local;await apiPost({action:'save',data:cloudPayload(db)});clearPendingSync();cacheLocalDatabase(db,false)}else clearPendingSync()}
           await afterLogin(session.data||{});
           return;
         }
@@ -302,7 +312,7 @@
   window.addEventListener('smartnote-open-task',event=>{const taskId=event.detail?.taskId;if(typeof taskId==='string'){showView('tasks');if(get('tasks',taskId))openForm('task',taskId)}});
   document.addEventListener('pointerdown',unlockNotificationAudio,{once:true});
   document.addEventListener('keydown',unlockNotificationAudio,{once:true});
-  window.addEventListener('online',()=>initializeCloud());
+  window.addEventListener('online',()=>{if(isReady&&authToken)syncCloud();else initializeCloud()});
   window.addEventListener('offline',()=>{setConnection(false,'انقطع اتصال الإنترنت. ستتم إعادة المزامنة تلقائياً عند عودة الاتصال.')});
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){syncCloud();checkTaskNotifications()}});
   setInterval(syncCloud,5000);
