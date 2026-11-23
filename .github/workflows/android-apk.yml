@@ -48,6 +48,27 @@ jobs:
         run: npx cap add android
       - name: Sync Capacitor plugins
         run: npx cap sync android
+      - name: Disable immersive full-screen and keep system bars visible
+        run: |
+          MAIN_ACTIVITY="android/app/src/main/java/com/hennawy55/smartnote/MainActivity.java"
+          cat > "$MAIN_ACTIVITY" <<'JAVA'
+          package com.hennawy55.smartnote;
+
+          import android.os.Bundle;
+          import android.view.WindowManager;
+          import androidx.core.view.WindowCompat;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+            @Override
+            public void onCreate(Bundle savedInstanceState) {
+              super.onCreate(savedInstanceState);
+              getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+              WindowCompat.setDecorFitsSystemWindows(getWindow(), true);
+              getWindow().getDecorView().setSystemUiVisibility(0);
+            }
+          }
+          JAVA
       - name: Build debug APK
         run: cd android && chmod +x gradlew && ./gradlew assembleDebug
       - name: Upload APK
