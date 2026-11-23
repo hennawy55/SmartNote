@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
+import { StatusBar, Style } from '@capacitor/status-bar';
 
 const isNative = Capacitor.isNativePlatform();
 let channelReady = false;
@@ -50,6 +51,12 @@ async function hasPermission(request = false) {
 }
 
 if (isNative) {
+  // Keep Android status/navigation bars visible and reserve their layout space.
+  StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
+  StatusBar.setBackgroundColor({ color: '#762236' }).catch(() => {});
+  StatusBar.setStyle({ style: Style.Light }).catch(() => {});
+  StatusBar.show().catch(() => {});
+
   window.smartNoteNativeNotifications = {
     isNative: true,
 
