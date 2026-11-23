@@ -52,10 +52,12 @@ function doPost(e) {
     if (action === "reassignment_request") return withSession_(req.token, function (user) { return { ok: true, request: requestReassignment_(user, req) }; });
     if (action === "reassignment_review") return withSession_(req.token, function (user) { return { ok: true, request: reviewReassignment_(user, req) }; });
     if (action === "assignment_note_add") return withSession_(req.token, function (user) { return { ok: true, note: addAssignmentNote_(user, req) }; });
-    if (action === "assignment_detail") return withSession_(req.token, function (user) { return { ok: true, assignment: assignmentDetail_(user, req.assignmentId) }; });
+    if (action === "assignment_detail") return withSession_(req.token, function (user) { return { ok: true, assignment: assignmentDetail_(user, req.assignmentId, false) }; });
+    if (action === "assignment_history") return withSession_(req.token, function (user) { return { ok: true, history: assignmentHistory_(user, req.assignmentId) }; });
+    if (action === "assignment_targets") return withSession_(req.token, function (user) { const x=assignmentById_(req.assignmentId); if(!x)throw new Error("user_not_found"); assertAssignmentAccess_(user,x.data,true); return {ok:true,users:listAssignableUsers_(user,req.excludeUserId)}; });
     if (action === "notification_list") return withSession_(req.token, function (user) { return { ok: true, notifications: listNotifications_(user) }; });
     if (action === "notification_read") return withSession_(req.token, function (user) { return { ok: true, read: markNotificationRead_(user, req.notificationId) }; });
-    if (action === "leader_users") return withSession_(req.token, function (user) { return { ok: true, users: listAssignableUsers_(user, req.excludeUserId) }; });
+    if (action === "leader_users") return withSession_(req.token, function (user) { if(!isAdmin_(user)&&!isLeader_(user))throw new Error("forbidden"); return { ok: true, users: listAssignableUsers_(user, req.excludeUserId) }; });
     throw new Error("invalid_action");
   } catch (err) {
     return json_({ error: safeError_(err) });
@@ -240,20 +242,19 @@ function clearSessionCache_(tokenHash) {
 function hashToken_(token) { return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(token), Utilities.Charset.UTF_8)); }
 function sessionUser_(token) {
   if (!token || typeof token !== "string" || token.length < 32) throw new Error("unauthorized");
-  const wanted = hashToken_(token);
-  const sh = sessions_();
-  const match = sh.getRange(2, 1, Math.max(1, sh.getLastRow() - 1), 1)
-    .createTextFinder(wanted).matchEntireCell(true).findNext();
-  if (!match) throw new Error("unauthorized");
-  const row = match.getRow();
-  const record = sh.getRange(row, 1, 1, 4).getValues()[0];
-  if (Date.parse(record[2]) <= Date.now()) {
-    sh.deleteRow(row);
-    throw new Error("unauthorized");
+  const wanted=hashToken_(token),cache=CacheService.getScriptCache(),key=sessionCacheKey_(wanted),cached=cache.get(key);
+  if(cached){
+    try{const entry=JSON.parse(cached);if(entry.expiresAt&&Date.parse(entry.expiresAt)>Date.now()&&entry.user&&String(entry.user.values[5])==="active")return {row:Number(entry.user.row),values:entry.user.values};}
+    catch(_){cache.remove(key);}
   }
-  const user = findUserById_(String(record[1]));
-  if (!user || String(user.values[5]) !== "active") throw new Error("inactive_user");
-  return user;
+  const sh=sessions_(),last=sh.getLastRow();if(last<2)throw new Error("unauthorized");
+  const match=sh.getRange(2,1,last-1,1).createTextFinder(wanted).matchEntireCell(true).findNext();
+  if(!match)throw new Error("unauthorized");
+  const row=match.getRow(),record=sh.getRange(row,1,1,4).getValues()[0],expiry=Date.parse(record[2]);
+  if(!Number.isFinite(expiry)||expiry<=Date.now()){sh.deleteRow(row);cache.remove(key);throw new Error("unauthorized");}
+  const user=findUserById_(String(record[1]));
+  if(!user||String(user.values[5])!=="active"){cache.remove(key);throw new Error("inactive_user");}
+  cacheSession_(wanted,user,String(record[2]));return user;
 }
 function findUserById_(id) {
   const sh = users_();
@@ -263,6 +264,7 @@ function findUserById_(id) {
   const row = match.getRow();
   return { row: row, values: sh.getRange(row, 1, 1, 9).getValues()[0] };
 }
+function withScriptLock_(fn) { const lock=LockService.getScriptLock(); if(!lock.tryLock(15000))throw new Error("operation_in_progress"); try{return fn();}finally{lock.releaseLock();} }
 function withSession_(token, fn) { return json_(fn(sessionUser_(token))); }
 function withAdmin_(token, fn) { const u = sessionUser_(token); if (String(u.values[4]) !== "admin") throw new Error("forbidden"); return json_(fn(u)); }
 function logout_(req) {
@@ -328,12 +330,15 @@ function revokeUserSessions_(id) {
   for (let i = rows.length - 1; i >= 1; i--) if (String(rows[i][1]) === String(id)) { clearSessionCache_(String(rows[i][0])); sh.deleteRow(i + 1); }
 }
 function deleteUser_(id) {
-  const u = findUserById_(String(id)); if (!u) throw new Error("user_not_found");
-  users_().deleteRow(u.row); revokeUserSessions_(id);
+  return withScriptLock_(function(){
+    const u=findUserById_(String(id));if(!u)throw new Error("user_not_found");
+    const active=assignmentRows_().filter(x=>!String(x.data.ArchivedAt||"")&&(String(x.data.AssigneeID)===String(id)||String(x.data.OwnerLeaderID)===String(id)));
+    if(active.length)throw new Error("user_has_active_assignments");
+    const pending=requestSheet_().getDataRange().getValues().slice(1).some(r=>(String(r[2])===String(id)||String(r[4])===String(id))&&String(r[7])==="pending");
+    if(pending)throw new Error("user_has_pending_requests");
+    users_().deleteRow(u.row);revokeUserSessions_(id);return true;
+  });
 }
-
-
-/* Assignment workflow */
 function assignmentSheet_(){const sh=sheet_("Assignments",UPGRADE_SHEETS.Assignments),headers=sh.getLastRow()?sh.getRange(1,1,1,Math.max(1,sh.getLastColumn())).getDisplayValues()[0]:[];UPGRADE_SHEETS.Assignments.forEach((name,i)=>{if(!headers[i])sh.getRange(1,i+1).setValue(name);else if(headers[i]!==name)throw new Error("schema_mismatch_Assignments");});sh.getRange(1,1,1,UPGRADE_SHEETS.Assignments.length).setFontWeight("bold");return sh;}
 function activitySheet_(){return sheet_("AssignmentActivity",UPGRADE_SHEETS.AssignmentActivity);}
 function requestSheet_(){return sheet_("ReassignmentRequests",UPGRADE_SHEETS.ReassignmentRequests);}
@@ -353,29 +358,30 @@ function assignmentPublic_(a){const type=String(a.Type||"task"),clientName=Strin
 function listAssignments_(u){return assignmentRows_().filter(x=>canSeeAssignment_(u,x.data)).map(x=>assignmentPublic_(x.data));}
 function listAssignableUsers_(u,excludeId){const excluded=new Set([String(u.values[0]),String(excludeId||"")]);return listUsers_().filter(x=>x.status==="active"&&!excluded.has(x.id)&&(!isLeader_(u)||x.role!=="admin")).map(x=>({id:x.id,username:x.username,role:x.role}));}
 function createAssignment_(u,req){
+ return withScriptLock_(function(){
  if(!isAdmin_(u)&&!isLeader_(u))throw new Error("forbidden");
  const type=req.assignmentType==="client"?"client":"task",clientName=String(req.clientName||"").trim(),clientPhone=String(req.clientPhone||"").trim();
  const title=(type==="client"?clientName:String(req.title||"").trim());if(!title||title.length>180)throw new Error("invalid_title");
  if(type==="client"&&!clientName)throw new Error("invalid_client_name");
  const target=findUserById_(String(req.assigneeId||""));if(!target||String(target.values[5])!=="active"||(isLeader_(u)&&String(target.values[4])==="admin"))throw new Error("user_not_found");
- const id=Utilities.getUuid(),now=new Date().toISOString();
- const ownerId=String(u.values[0]),ownerName=String(u.values[1]);
- const a={AssignmentID:id,Title:title,Description:String(req.description||"").slice(0,5000),Status:"new",Priority:["low","normal","high","urgent"].includes(req.priority)?req.priority:"normal",DueAt:String(req.dueAt||""),CreatedAt:now,AssignedAt:now,UpdatedAt:now,CreatedBy:String(u.values[0]),CreatedByName:String(u.values[1]),OwnerLeaderID:ownerId,OwnerLeaderName:ownerName,AssigneeID:String(target.values[0]),AssigneeName:String(target.values[1]),ArchivedAt:"",ViewedAt:"",Type:type,ClientName:type==="client"?clientName:"",ClientPhone:type==="client"?clientPhone:""};
+ const id=Utilities.getUuid(),now=new Date().toISOString(),ownerId=String(u.values[0]),ownerName=String(u.values[1]);
+ const a={AssignmentID:id,Title:title,Description:String(req.description||"").slice(0,5000),Status:"new",Priority:["low","normal","high","urgent"].includes(req.priority)?req.priority:"normal",DueAt:String(req.dueAt||""),CreatedAt:now,AssignedAt:now,UpdatedAt:now,CreatedBy:ownerId,CreatedByName:ownerName,OwnerLeaderID:ownerId,OwnerLeaderName:ownerName,AssigneeID:String(target.values[0]),AssigneeName:String(target.values[1]),ArchivedAt:"",ViewedAt:"",Type:type,ClientName:type==="client"?clientName:"",ClientPhone:type==="client"?clientPhone:""};
  assignmentSheet_().appendRow(UPGRADE_SHEETS.Assignments.map(k=>a[k]));activity_(id,u,"created",{assignee:a.AssigneeName});notify_(a.AssigneeID,id,"assigned","متابعة جديدة",title+" — تم إسناد متابعة إليك");
  return assignmentPublic_(a);
+ });
 }
 function reassignAssignment_(u,req){
+ return withScriptLock_(function(){
  const x=assignmentById_(req.assignmentId);if(!x)throw new Error("user_not_found");const a=x.data;assertAssignmentAccess_(u,a,true);
- if(!isAdmin_(u)&&!isLeader_(u))throw new Error("forbidden");
+ if(!canManageAssignment_(u,a))throw new Error("forbidden");
  const target=findUserById_(String(req.toUserId||""));
  if(!target||String(target.values[5])!=="active"||String(target.values[0])===String(u.values[0])||(isLeader_(u)&&String(target.values[4])==="admin"))throw new Error("user_not_found");
  if(String(target.values[0])===String(a.AssigneeID))throw new Error("same_assignee");
  const previous=a.AssigneeName,previousId=a.AssigneeID,now=new Date().toISOString();a.AssigneeID=String(target.values[0]);a.AssigneeName=String(target.values[1]);a.AssignedAt=now;a.UpdatedAt=now;a.ViewedAt="";if(a.Status==="viewed")a.Status="new";
  assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>a[k])]);
- activity_(a.AssignmentID,u,"reassigned",{from:previous,to:a.AssigneeName,reason:String(req.reason||"").slice(0,1000)});
- notify_(a.AssigneeID,a.AssignmentID,"assigned","متابعة جديدة",a.Title+" — تم إسناد متابعة إليك");
- notify_(String(previousId||""),a.AssignmentID,"reassigned","تم إعادة إسناد المتابعة",a.Title+" — تم إسنادها إلى "+a.AssigneeName);
+ activity_(a.AssignmentID,u,"reassigned",{from:previous,to:a.AssigneeName});notify_(a.AssigneeID,a.AssignmentID,"assigned","متابعة جديدة",a.Title+" — تم إسناد متابعة إليك");notify_(String(previousId||""),a.AssignmentID,"reassigned","تم إعادة إسناد المتابعة",a.Title+" — تم إسنادها إلى "+a.AssigneeName);
  return assignmentPublic_(a);
+ });
 }
 function updateAssignment_(u,req){
  const x=assignmentById_(req.assignmentId);if(!x)throw new Error("user_not_found");const a=x.data;assertAssignmentAccess_(u,a,true);
@@ -391,21 +397,39 @@ function updateAssignmentStatus_(u,req){
 }
 function archiveAssignment_(u,id,archive){const x=assignmentById_(id);if(!x)throw new Error("user_not_found");assertAssignmentAccess_(u,x.data,true);x.data.ArchivedAt=archive?new Date().toISOString():"";x.data.UpdatedAt=new Date().toISOString();assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>x.data[k])]);activity_(id,u,archive?"archived":"restored",{});return true;}
 function requestReassignment_(u,req){
+ return withScriptLock_(function(){
  const x=assignmentById_(req.assignmentId);if(!x)throw new Error("user_not_found");const a=x.data;assertAssignmentAccess_(u,a,false);
  if(String(a.AssigneeID)!==String(u.values[0]))throw new Error("forbidden");
- const target=findUserById_(String(req.toUserId||"")),reason=String(req.reason||"").trim();if(!target||String(target.values[5])!=="active")throw new Error("user_not_found");if(!reason)throw new Error("invalid_reason");
+ const target=findUserById_(String(req.toUserId||"")),reason=String(req.reason||"").trim();
+ if(!target||String(target.values[5])!=="active")throw new Error("user_not_found");
+ if(String(target.values[0])===String(u.values[0])||String(target.values[0])===String(a.AssigneeID))throw new Error("same_assignee");
+ if(!reason)throw new Error("invalid_reason");
  const pending=requestSheet_().getDataRange().getValues().slice(1).some(r=>String(r[1])===String(a.AssignmentID)&&String(r[7])==="pending");if(pending)throw new Error("request_pending");
  const now=new Date().toISOString(),id=Utilities.getUuid();requestSheet_().appendRow([id,a.AssignmentID,String(u.values[0]),String(u.values[1]),String(target.values[0]),String(target.values[1]),reason,"pending",now,"","",""]);
  activity_(a.AssignmentID,u,"reassignment_requested",{to:target.values[1],reason});notify_(a.OwnerLeaderID,a.AssignmentID,"reassignment_request","طلب إعادة إسناد",a.Title+" — "+reason);return {id:id,status:"pending"};
+ });
 }
 function reviewReassignment_(u,req){
+ return withScriptLock_(function(){
  const id=String(req.requestId||""),sh=requestSheet_(),rows=sh.getDataRange().getValues();let row=-1,r;
  for(let i=1;i<rows.length;i++)if(String(rows[i][0])===id){row=i+1;r=rows[i];break;}
  if(row<0)throw new Error("user_not_found");const x=assignmentById_(r[1]);if(!x)throw new Error("user_not_found");assertAssignmentAccess_(u,x.data,true);
- if(String(x.data.OwnerLeaderID)!==String(u.values[0])&&!isAdmin_(u))throw new Error("forbidden");if(String(r[7])!=="pending")throw new Error("request_not_pending");
- const approve=req.approve===true,now=new Date().toISOString();sh.getRange(row,8,1,5).setValues([[approve?"approved":"rejected",now,String(u.values[0]),String(u.values[1]),""]]);
- if(approve){const target=findUserById_(String(r[4]));if(!target||String(target.values[5])!=="active")throw new Error("user_not_found");x.data.AssigneeID=String(target.values[0]);x.data.AssigneeName=String(target.values[1]);x.data.OwnerLeaderID=String(target.values[0]);x.data.OwnerLeaderName=String(target.values[1]);x.data.AssignedAt=now;x.data.UpdatedAt=now;assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>x.data[k])]);notify_(x.data.AssigneeID,x.data.AssignmentID,"assigned","متابعة محولة إليك",x.data.Title);}
- activity_(x.data.AssignmentID,u,approve?"reassignment_approved":"reassignment_rejected",{requestId:id});notify_(r[2],x.data.AssignmentID,"reassignment_result",approve?"تمت الموافقة على النقل":"تم رفض النقل",x.data.Title);return {id:id,status:approve?"approved":"rejected"};
+ if(String(x.data.OwnerLeaderID)!==String(u.values[0])&&!isAdmin_(u))throw new Error("forbidden");
+ if(String(r[7])!=="pending")throw new Error("request_not_pending");
+ const approve=req.approve===true,now=new Date().toISOString();let target=null;
+ if(approve){target=findUserById_(String(r[4]));if(!target||String(target.values[5])!=="active")throw new Error("user_not_found");}
+ // Validate the target before mutating either sheet row.
+ if(approve){
+   x.data.AssigneeID=String(target.values[0]);x.data.AssigneeName=String(target.values[1]);x.data.OwnerLeaderID=String(target.values[0]);x.data.OwnerLeaderName=String(target.values[1]);x.data.AssignedAt=now;x.data.UpdatedAt=now;x.data.ViewedAt="";
+   if(x.data.Status==="viewed")x.data.Status="new";
+   assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>x.data[k])]);
+ }
+ sh.getRange(row,8,1,5).setValues([[approve?"approved":"rejected",now,String(u.values[0]),String(u.values[1]),""]]);
+ activity_(x.data.AssignmentID,u,approve?"reassignment_approved":"reassignment_rejected",{requestId:id,to:approve?target.values[1]:""});
+ if(approve)notify_(x.data.AssigneeID,x.data.AssignmentID,"assigned","متابعة محولة إليك",x.data.Title);
+ notify_(r[2],x.data.AssignmentID,"reassignment_result",approve?"تمت الموافقة على النقل":"تم رفض النقل",x.data.Title);
+ return {id:id,status:approve?"approved":"rejected"};
+ });
 }
 function addAssignmentNote_(u,req){
  const x=assignmentById_(req.assignmentId);if(!x)throw new Error("user_not_found");assertAssignmentAccess_(u,x.data,false);
@@ -413,22 +437,23 @@ function addAssignmentNote_(u,req){
  if(visibility==="shared"&&!canManageAssignment_(u,x.data)&&String(u.values[0])!==String(x.data.AssigneeID))throw new Error("forbidden");
  const now=new Date().toISOString(),id=Utilities.getUuid();notesSheet_().appendRow([id,x.data.AssignmentID,String(u.values[0]),String(u.values[1]),visibility,body,now,now]);activity_(x.data.AssignmentID,u,"note_added",{visibility:visibility});return {id:id,visibility:visibility,body:body,createdAt:now};
 }
-function assignmentDetail_(u,id){
+function assignmentDetail_(u,id,includeHistory){
  const x=assignmentById_(id);if(!x)throw new Error("user_not_found");assertAssignmentAccess_(u,x.data,false);
  if(!x.data.ViewedAt&&String(x.data.AssigneeID)===String(u.values[0])){x.data.ViewedAt=new Date().toISOString();if(x.data.Status==="new")x.data.Status="viewed";x.data.UpdatedAt=x.data.ViewedAt;assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>x.data[k])]);activity_(id,u,"viewed",{});}
  const notes=notesSheet_().getDataRange().getValues().slice(1).filter(r=>String(r[1])===String(id)&&(String(r[4])==="shared"||String(r[2])===String(u.values[0]))).map(r=>({id:r[0],authorId:r[2],authorName:r[3],visibility:r[4],body:r[5],createdAt:r[6]}));
- const activity=activitySheet_().getDataRange().getValues().slice(1).filter(r=>String(r[1])===String(id)).map(r=>({actorName:r[3],action:r[4],details:(()=>{try{return JSON.parse(r[5]||"{}")}catch(e){return {}}})(),createdAt:r[6]}));
  const requests=requestSheet_().getDataRange().getValues().slice(1).filter(r=>String(r[1])===String(id)&&(isAdmin_(u)||String(r[2])===String(u.values[0])||String(x.data.OwnerLeaderID)===String(u.values[0]))).map(r=>({id:r[0],fromUserName:r[3],toUserName:r[5],reason:r[6],status:r[7],requestedAt:r[8]}));
- return { ...assignmentPublic_(x.data),notes:notes,activity:activity,requests:requests };
+ const result={...assignmentPublic_(x.data),notes:notes,requests:requests};if(includeHistory)result.activity=assignmentHistoryData_(id);return result;
 }
+function assignmentHistory_(u,id){const x=assignmentById_(id);if(!x)throw new Error("user_not_found");assertAssignmentAccess_(u,x.data,false);return assignmentHistoryData_(id);}
+function assignmentHistoryData_(id){return activitySheet_().getDataRange().getValues().slice(1).filter(r=>String(r[1])===String(id)).map(r=>({actorName:r[3],action:r[4],details:(()=>{try{return JSON.parse(r[5]||"{}")}catch(e){return {}}})(),createdAt:r[6]}));}
 function listNotifications_(u){return notificationSheet_().getDataRange().getValues().slice(1).filter(r=>String(r[1])===String(u.values[0])).map(r=>({id:r[0],assignmentId:r[2],type:r[3],title:r[4],body:r[5],isRead:r[6]===true||String(r[6])==="TRUE",createdAt:r[7]})).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));}
 function markNotificationRead_(u,id){const sh=notificationSheet_(),rows=sh.getDataRange().getValues();for(let i=1;i<rows.length;i++)if(String(rows[i][0])===String(id)&&String(rows[i][1])===String(u.values[0])){sh.getRange(i+1,7).setValue(true);sh.getRange(i+1,9).setValue(new Date().toISOString());return true;}throw new Error("user_not_found");}
 
 function setUserRole_(id, role, adminId) {
-  if (!["admin", "leader", "user"].includes(role)) throw new Error("invalid_role");
-  const u = findUserById_(String(id)); if (!u) throw new Error("user_not_found");
-  if (String(id) === String(adminId)) throw new Error("cannot_change_own_role");
-  users_().getRange(u.row, 5).setValue(role);
-  revokeUserSessions_(id);
-  return true;
+  if (!["admin","leader","user"].includes(role)) throw new Error("invalid_role");
+  const u=findUserById_(String(id));if(!u)throw new Error("user_not_found");
+  if(String(id)===String(adminId))throw new Error("cannot_change_own_role");
+  const manages=assignmentRows_().some(x=>!String(x.data.ArchivedAt||"")&&String(x.data.OwnerLeaderID)===String(id));
+  if(role==="user"&&manages)throw new Error("user_manages_active_assignments");
+  users_().getRange(u.row,5).setValue(role);revokeUserSessions_(id);return true;
 }
