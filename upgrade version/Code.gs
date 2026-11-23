@@ -370,11 +370,11 @@ function reassignAssignment_(u,req){
  const target=findUserById_(String(req.toUserId||""));
  if(!target||String(target.values[5])!=="active"||String(target.values[0])===String(u.values[0])||(isLeader_(u)&&String(target.values[4])==="admin"))throw new Error("user_not_found");
  if(String(target.values[0])===String(a.AssigneeID))throw new Error("same_assignee");
- const previous=a.AssigneeName,now=new Date().toISOString();a.AssigneeID=String(target.values[0]);a.AssigneeName=String(target.values[1]);a.AssignedAt=now;a.UpdatedAt=now;a.ViewedAt="";if(a.Status==="viewed")a.Status="new";
+ const previous=a.AssigneeName,previousId=a.AssigneeID,now=new Date().toISOString();a.AssigneeID=String(target.values[0]);a.AssigneeName=String(target.values[1]);a.AssignedAt=now;a.UpdatedAt=now;a.ViewedAt="";if(a.Status==="viewed")a.Status="new";
  assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>a[k])]);
  activity_(a.AssignmentID,u,"reassigned",{from:previous,to:a.AssigneeName,reason:String(req.reason||"").slice(0,1000)});
  notify_(a.AssigneeID,a.AssignmentID,"assigned","متابعة جديدة",a.Title+" — تم إسناد متابعة إليك");
- notify_(String(req.previousAssigneeId||""),a.AssignmentID,"reassigned","تم إعادة إسناد المتابعة",a.Title+" — تم إسنادها إلى "+a.AssigneeName);
+ notify_(String(previousId||""),a.AssignmentID,"reassigned","تم إعادة إسناد المتابعة",a.Title+" — تم إسنادها إلى "+a.AssigneeName);
  return assignmentPublic_(a);
 }
 function updateAssignment_(u,req){
