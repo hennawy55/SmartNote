@@ -89,7 +89,7 @@ if (isNative) {
               body: 'حان موعد المتابعة: ' + (task.title || 'متابعة جديدة'),
               schedule: { at: dueAt },
               channelId: 'smartnote-reminders',
-              extra: { smartNoteReminder: true, taskId: task.id, kind: 'due' }
+              extra: { smartNoteReminder: true, taskId: task.id, kind: 'due', key: task.id + ':due:' + dueAt.getTime() }
             });
           }
         }
@@ -105,7 +105,7 @@ if (isNative) {
               schedule: { at: reminderAt },
               channelId: 'smartnote-reminders',
               smallIcon: 'ic_launcher',
-              extra: { smartNoteReminder: true, taskId: task.id, kind: 'in_progress' }
+              extra: { smartNoteReminder: true, taskId: task.id, kind: 'in_progress', key: task.id + ':in_progress:' + task.startedAt }
             });
           }
         }
@@ -139,7 +139,7 @@ if (isNative) {
   LocalNotifications.addListener('localNotificationActionPerformed', event => {
     const taskId = event.notification?.extra?.taskId;
     if (typeof taskId === 'string') {
-      window.dispatchEvent(new CustomEvent('smartnote-open-task', { detail: { taskId } }));
+      window.dispatchEvent(new CustomEvent('smartnote-open-task', { detail: { taskId, key: event.notification?.extra?.key } }));
     }
   });
 }
