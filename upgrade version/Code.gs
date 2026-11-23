@@ -442,7 +442,7 @@ function assignmentRows_(){
 function assignmentById_(id){
  const sh=assignmentSheet_(),last=sh.getLastRow();if(last<2)return null;
  const match=sh.getRange(2,1,last-1,1).createTextFinder(String(id)).matchEntireCell(true).findNext();
- if(!match)return null;const row=match.getRow(),values=sh.getRange(row,1,UPGRADE_SHEETS.Assignments.length).getValues()[0];
+ if(!match)return null;const row=match.getRow(),values=sh.getRange(row,1,1,UPGRADE_SHEETS.Assignments.length).getValues()[0];
  return {row:row,data:rowObject_(UPGRADE_SHEETS.Assignments,values)};
 }
 function isAdmin_(u){return String(u.values[4])==="admin";}
@@ -536,7 +536,7 @@ function reviewReassignment_(u,req){
  // Validate the target before mutating either sheet row.
  const originalAssignment=JSON.parse(JSON.stringify(x.data));
   if(approve){
-   x.data.AssigneeID=String(target.values[0]);x.data.AssigneeName=String(target.values[1]);x.data.OwnerLeaderID=String(target.values[0]);x.data.OwnerLeaderName=String(target.values[1]);x.data.AssignedAt=now;x.data.UpdatedAt=now;x.data.ViewedAt="";
+   x.data.AssigneeID=String(target.values[0]);x.data.AssigneeName=String(target.values[1]);x.data.AssignedAt=now;x.data.UpdatedAt=now;x.data.ViewedAt="";
    if(x.data.Status==="viewed")x.data.Status="new";
    assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>x.data[k])]);clearAssignmentCache_();
   }

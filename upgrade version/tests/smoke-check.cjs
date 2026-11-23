@@ -29,6 +29,8 @@ assert(backend.includes('function withScriptLock_'), 'Mutating operations must u
 assert(backend.includes('user_has_active_assignments'), 'Deleting users with active assignments must be blocked');
 assert(backend.includes('isLastActiveAdmin_') && backend.includes('last_active_admin'), 'The last active administrator must be protected');
 assert(backend.includes('function reviewReassignment_') && backend.includes('Validate the target before mutating'), 'Reassignment review must validate target before writing');
+assert(backend.includes('getRange(row,1,1,UPGRADE_SHEETS.Assignments.length).getValues()[0]'), 'Assignment detail lookup must read all assignment columns from one row');
+assert(!backend.includes('x.data.OwnerLeaderID=String(target.values[0])'), 'Reassignment approval must preserve the original distributor/owner');
 assert(backend.includes('stalePendingReassignmentRequests_') && backend.includes('request_stale'), 'Ownership changes must invalidate stale reassignment requests');
 assert(backend.includes('function assignmentHistory_'), 'History must have a dedicated authorized endpoint');
 assert(backend.includes('assignment_archived_list') && app.includes('assignmentArchiveButton'), 'Managers must be able to archive and restore follow-ups');
