@@ -65,7 +65,7 @@
     'user_not_found':'The requested user or record was not found.',
     'cannot_change_own_role':'You cannot change your own role.',
     'request_pending':'A reassignment request is already pending for this follow-up.',
-    'request_not_pending':'This reassignment request has already been processed.',
+    'request_not_pending':'This reassignment request has already been processed.','request_stale':'This request is no longer valid because the assignment owner has changed.',
     'invalid_reason':'A reason is required for a reassignment request.',
     'invalid_title':'Enter a valid title.',
     'invalid_status':'The selected status is not valid.',
