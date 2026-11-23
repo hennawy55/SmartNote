@@ -48,6 +48,16 @@ jobs:
         run: npx cap add android
       - name: Sync Capacitor plugins
         run: npx cap sync android
+      - name: Keep Android app below system bars
+        run: |
+          # Android 15 enforces edge-to-edge for target SDK 35. Keep this sideloaded build
+          # at target 34 so the status/navigation bars remain separate from app content.
+          if grep -q 'targetSdkVersion = 35' android/variables.gradle; then
+            sed -i 's/targetSdkVersion = 35/targetSdkVersion = 34/' android/variables.gradle
+          fi
+          if grep -q 'targetSdkVersion = 36' android/variables.gradle; then
+            sed -i 's/targetSdkVersion = 36/targetSdkVersion = 34/' android/variables.gradle
+          fi
       - name: Disable immersive full-screen and keep system bars visible
         run: |
           MAIN_ACTIVITY="android/app/src/main/java/com/hennawy55/smartnote/MainActivity.java"
