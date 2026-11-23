@@ -22,7 +22,8 @@ assert(backend.includes('function assignmentHistory_'), 'History must have a ded
 assert(backend.includes('Users_backup_'), 'User schema migration must create a backup first');
 assert(backend.includes('too_many_attempts'), 'Login attempts must be throttled');
 assert(backend.includes('setValue(true)'), 'Admin password reset must require password change at next login');
-assert(app.includes("data-admin-action='delete'") || app.includes('data-admin-action="delete"'), 'Admin UI must expose guarded account deletion');
+assert(/data-admin-action=["']delete["']/.test(app), 'Admin UI must expose guarded account deletion');
+assert(backend.includes('AuditLog:') && backend.includes('admin_audit_list') && backend.includes('function audit_'), 'Account security events must be audited');
 assert(!app.includes('toggleTaskAlertSnooze') && !app.includes('enableNotifications'), 'Removed notification controls must not remain in the app');
 assert(!html.includes('lucide@latest') && html.includes('./lucide.min.js'), 'Lucide must be pinned and local');
 assert(worker.includes('./lucide.min.js'), 'Offline cache must include local Lucide runtime');
