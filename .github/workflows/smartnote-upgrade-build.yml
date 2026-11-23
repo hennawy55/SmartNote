@@ -36,6 +36,8 @@ jobs:
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
       - name: Install dependencies
         run: npm install
+      - name: Validate application JavaScript
+        run: node --check app.js && node --check language.js && node --check theme.js
       - name: Prepare Android web assets
         run: npm run prepare:android
       - name: Prepare web package
