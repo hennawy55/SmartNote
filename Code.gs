@@ -45,9 +45,32 @@ function json_(obj) {
 }
 function safeError_(err) {
   const msg = String(err && err.message || "server_error");
-  return /^(invalid_|unauthorized$|forbidden$|inactive_user$|username_exists$|bootstrap_disabled$|bootstrap_already_used$|weak_password$|user_not_found$|cannot_disable_self$|cannot_delete_self$|database_too_large$|server_error$)/.test(msg) ? msg : "server_error";
+  return /^(invalid_|unauthorized$|forbidden$|inactive_user$|username_exists$|bootstrap_disabled$|bootstrap_already_used$|weak_password$|user_not_found$|cannot_disable_self$|cannot_delete_self$|database_too_large$|database_not_configured$|server_error$)/.test(msg) ? msg : "server_error";
 }
-function book_() { return SpreadsheetApp.getActiveSpreadsheet(); }
+function book_() {
+  const id = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID");
+  if (!id) throw new Error("database_not_configured");
+  return SpreadsheetApp.openById(id);
+}
+
+/** Run manually once after setting SPREADSHEET_ID. Creates tables without deleting data. */
+function setupSmartNoteDatabase() {
+  const ss = book_();
+  const specs = [
+    { name: USERS_SHEET, headers: ["UserID","Username","PasswordHash","Salt","Role","Status","UpdatedAt","DatabaseJSON"] },
+    { name: SESSIONS_SHEET, headers: ["TokenHash","UserID","ExpiresAt","CreatedAt","LastSeenAt","DeviceLabel"] }
+  ];
+  specs.forEach(spec => {
+    let sh = ss.getSheetByName(spec.name);
+    if (!sh) sh = ss.insertSheet(spec.name);
+    const existing = sh.getRange(1, 1, 1, spec.headers.length).getDisplayValues()[0];
+    if (sh.getLastRow() === 0 || existing.every(v => !v)) sh.getRange(1, 1, 1, spec.headers.length).setValues([spec.headers]);
+    sh.setFrozenRows(1);
+    sh.getRange(1, 1, 1, spec.headers.length).setFontWeight("bold");
+  });
+  ss.getSheetByName(USERS_SHEET).getRange("H:H").setNumberFormat("@");
+  return { ok: true, spreadsheetId: ss.getId(), sheets: specs.map(s => s.name) };
+}
 function sheet_(name, headers) {
   const ss = book_(); let sh = ss.getSheetByName(name);
   if (!sh) sh = ss.insertSheet(name);
@@ -58,7 +81,7 @@ function users_() {
   const sh = sheet_(USERS_SHEET, ["UserID","Username","PasswordHash","Salt","Role","Status","UpdatedAt","DatabaseJSON"]);
   return sh;
 }
-function sessions_() { return sheet_(SESSIONS_SHEET, ["TokenHash","UserID","ExpiresAt","CreatedAt"]); }
+function sessions_() { return sheet_(SESSIONS_SHEET, ["TokenHash","UserID","ExpiresAt","CreatedAt","LastSeenAt","DeviceLabel"]); }
 function randomHex_(n) {
   const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + "|" + Date.now() + "|" + Math.random());
   return bytes.slice(0, n).map(b => ("0" + ((b + 256) % 256).toString(16)).slice(-2)).join("");
@@ -110,7 +133,7 @@ function login_(req) {
   const tokenHash = hashToken_(token), expiresAt = expiry.toISOString();
   sh.appendRow([tokenHash, String(found.values[0]), expiresAt, now.toISOString()]);
   cacheSession_(tokenHash, found, expiresAt);
-  return json_({ ok: true, token: token, user: publicUser_(found) });
+  return json_({ ok: true, token: token, user: publicUser_(found), data: readDatabase_(found.row) });
 }
 function sessionCacheKey_(tokenHash) { return "smartnote_session_" + tokenHash; }
 function cacheSession_(tokenHash, user, expiresAt) {
