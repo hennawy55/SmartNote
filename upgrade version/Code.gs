@@ -45,6 +45,7 @@ function doPost(e) {
     if (action === "admin_reset_password") return withAdmin_(req.token, function (admin) { resetPassword_(req.userId, req.password,admin); return { ok: true }; });
     if (action === "admin_delete") return withAdmin_(req.token, function (admin) { if(String(req.userId)===String(admin.values[0]))throw new Error("cannot_delete_self"); deleteUser_(req.userId,admin); return { ok: true }; });
     if (action === "assignment_list") return withSession_(req.token, function (user) { return { ok: true, assignments: listAssignments_(user) }; });
+    if (action === "assignment_archived_list") return withSession_(req.token, function (user) { return {ok:true,assignments:listArchivedAssignments_(user)}; });
     if (action === "assignment_create") return withSession_(req.token, function (user) { return { ok: true, assignment: createAssignment_(user, req) }; });
     if (action === "assignment_reassign") return withSession_(req.token, function (user) { return { ok: true, assignment: reassignAssignment_(user, req) }; });
     if (action === "assignment_update") return withSession_(req.token, function (user) { return { ok: true, assignment: updateAssignment_(user, req) }; });
@@ -426,7 +427,8 @@ function stalePendingReassignmentRequests_(assignmentId,actor){
 }
 function notify_(userId,assignmentId,type,title,body){if(!userId)return;notificationSheet_().appendRow([Utilities.getUuid(),userId,assignmentId||"",type,title,body,false,new Date().toISOString(),""]);}
 function assignmentPublic_(a){const type=String(a.Type||"task"),clientName=String(a.ClientName||"");let title=String(a.Title||"");if(type==="client"){title=clientName||title.replace(/^متابعة عميل\s*:\s*/,"");}return {id:String(a.AssignmentID),title:title,description:String(a.Description||""),type:type,clientName:clientName,clientPhone:String(a.ClientPhone||""),status:String(a.Status||"new"),priority:String(a.Priority||"normal"),dueAt:String(a.DueAt||""),createdAt:String(a.CreatedAt||""),assignedAt:String(a.AssignedAt||""),updatedAt:String(a.UpdatedAt||""),createdBy:String(a.CreatedBy||""),createdByName:String(a.CreatedByName||""),ownerLeaderId:String(a.OwnerLeaderID||""),ownerLeaderName:String(a.OwnerLeaderName||""),assigneeId:String(a.AssigneeID||""),assigneeName:String(a.AssigneeName||""),archivedAt:String(a.ArchivedAt||""),viewedAt:String(a.ViewedAt||"")};}
-function listAssignments_(u){return assignmentRows_().filter(x=>canSeeAssignment_(u,x.data)).map(x=>assignmentPublic_(x.data));}
+function listAssignments_(u){return assignmentRows_().filter(x=>!String(x.data.ArchivedAt||"")&&canSeeAssignment_(u,x.data)).map(x=>assignmentPublic_(x.data));}
+function listArchivedAssignments_(u){return assignmentRows_().filter(x=>String(x.data.ArchivedAt||"")&&canManageAssignment_(u,x.data)).map(x=>assignmentPublic_(x.data));}
 function listAssignableUsers_(u,excludeId){const excluded=new Set([String(u.values[0]),String(excludeId||"")]);return listUsers_().filter(x=>x.status==="active"&&!excluded.has(x.id)&&(isAdmin_(u)||x.role!=="admin")).map(x=>({id:x.id,username:x.username,role:x.role}));}
 function createAssignment_(u,req){
  return withScriptLock_(function(){
