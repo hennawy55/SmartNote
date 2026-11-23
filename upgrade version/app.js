@@ -34,27 +34,7 @@
   function persistTaskAlertState(){try{localStorage.setItem(NOTIFICATION_STATE_KEY,JSON.stringify({alerts:taskAlerts.map(({key,taskId,title,body,taskTitle,createdAt})=>({key,taskId,title,body,taskTitle:taskTitle||get('tasks',taskId)?.title||'',createdAt})),notified:[...notifiedTaskReminders],snoozedUntil:notificationsSnoozedUntil}))}catch(err){toast('تعذر حفظ حالة التنبيهات على هذا الجهاز: '+err.message)}}
   function taskAlertTitleKey(title){return String(title||'').trim().toLocaleLowerCase('ar-EG')}
   function restoreTaskAlertState(){try{const saved=localStorage.getItem(NOTIFICATION_STATE_KEY);if(!saved)return;const state=JSON.parse(saved);if(!state||typeof state!=='object')throw new Error('بيانات التنبيهات المحفوظة غير صالحة');if(Array.isArray(state.notified))state.notified.filter(key=>typeof key==='string').forEach(key=>notifiedTaskReminders.add(key));if(Array.isArray(state.alerts)){const latestByTitle=new Map();state.alerts.filter(alert=>alert&&typeof alert.key==='string'&&typeof alert.taskId==='string'&&typeof alert.title==='string'&&typeof alert.body==='string').forEach(alert=>{alert.taskTitle=alert.taskTitle||get('tasks',alert.taskId)?.title||'';const titleKey=taskAlertTitleKey(alert.taskTitle||alert.body),previous=latestByTitle.get(titleKey);if(!previous||(alert.createdAt||0)>=(previous.createdAt||0))latestByTitle.set(titleKey,alert)});taskAlerts.push(...latestByTitle.values())}notificationsSnoozedUntil=Number.isFinite(state.snoozedUntil)?state.snoozedUntil:0;persistTaskAlertState();renderTaskAlerts()}catch(err){toast('تعذر استعادة التنبيهات المحفوظة: '+err.message)}}
-  function renderTaskAlerts(){
-    const list=document.getElementById('taskAlerts'),count=document.getElementById('notificationCount'),panelCount=document.getElementById('notificationPanelCount'),bell=document.getElementById('notificationBell');
-    count.textContent=String(taskAlerts.length);count.hidden=taskAlerts.length===0;panelCount.textContent=`(${taskAlerts.length})`;bell.setAttribute('aria-label',`الإشعارات: ${taskAlerts.length}`);
-    list.innerHTML=taskAlerts.length?taskAlerts.map(alert=>`<article class="task-alert" role="alert" aria-labelledby="alert-title-${esc(alert.key)}"><h3 id="alert-title-${esc(alert.key)}">${esc(alert.title)}</h3><p>${esc(alert.body)}</p><div class="task-alert-actions"><button type="button" class="btn primary" data-alert-action="show" data-alert-key="${esc(alert.key)}">إظهار المتابعة</button><button type="button" class="btn" data-alert-action="dismiss" data-alert-key="${esc(alert.key)}">إخفاء</button></div></article>`).join(''):'<div class="notification-empty">لا توجد إشعارات حالياً</div>';
-    if(!list.dataset.alertActionsBound){
-      list.dataset.alertActionsBound='1';
-      list.addEventListener('click',event=>{
-        const target=event.target instanceof Element?event.target:null;
-        const button=target?.closest('button[data-alert-action]');
-        if(!button||!list.contains(button))return;
-        event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();
-        const action=button.getAttribute('data-alert-action'),key=button.getAttribute('data-alert-key');
-        if(!key)return;
-        try{
-          if(action==='show')showAlertTask(key);
-          else if(action==='dismiss'){const removed=removeTaskAlert(key);if(removed)toast('تم إخفاء الإشعار')}
-        }catch(error){toast('تعذر تنفيذ الإجراء: '+(error?.message||'خطأ غير معروف'))}
-      },true);
-    }
-    refreshSnoozeButton();
-  }
+  function renderTaskAlerts(){if(isReady)refreshUnifiedNotifications();else refreshSnoozeButton()}
   function closeBrowserNotification(key){const notification=browserNotifications.get(key);if(notification){browserNotifications.delete(key);try{const result=notification.close();if(result?.catch)result.catch(err=>toast('تعذر إغلاق إشعار النظام: '+err.message))}catch(err){toast('تعذر إغلاق إشعار النظام: '+err.message)}return}if(!serviceWorkerRegistration||typeof serviceWorkerRegistration.getNotifications!=='function')return;try{serviceWorkerRegistration.getNotifications({tag:key}).then(notifications=>notifications.forEach(item=>item.close())).catch(err=>toast('تعذر إغلاق إشعار النظام: '+err.message))}catch(err){toast('تعذر إغلاق إشعار النظام: '+err.message)}}
   function recordTaskAlertDismissal(key){if(!isReady)return;const dismissed=new Set(db.taskNotificationDismissals||[]);if(dismissed.has(key))return;dismissed.add(key);db.taskNotificationDismissals=[...dismissed];localRevision++;saveDatabase(db).catch(err=>toast('تعذر مزامنة إخفاء الإشعار: '+err.message))}
   function removeTaskAlert(key){const index=taskAlerts.findIndex(alert=>alert.key===key);if(index<0)return null;const [alert]=taskAlerts.splice(index,1);recordTaskAlertDismissal(key);closeBrowserNotification(key);persistTaskAlertState();renderTaskAlerts();return alert}
@@ -78,7 +58,7 @@
   function setConnection(ok,msg){document.getElementById('connectionDot').classList.toggle('online',!!ok);document.getElementById('connectionText').textContent=ok?'متصل بقاعدة البيانات':'غير متصل';document.getElementById('connectionHint').textContent=msg||(ok?'تم الاتصال بـ Google Sheets.':'يلزم الاتصال بالإنترنت وقاعدة البيانات.')}
   function showGate(message){document.getElementById('onlineGateMessage').textContent=message;document.getElementById('onlineGate').style.display='flex'}
   function hideGate(){document.getElementById('onlineGate').style.display='none'}
-  function updateQuickAdd(view){const button=document.getElementById('quickAdd'),action=QUICK_ACTIONS[view];button.dataset.quickAddType=action?.[0]||'';button.innerHTML=`<i data-lucide="plus"></i> ${action?.[1]||'إضافة جديدة'}`;if(window.lucide)window.lucide.createIcons({attrs:{'stroke-width':1.8}})}
+  function updateQuickAdd(view){const button=document.getElementById('quickAdd'),action=QUICK_ACTIONS[view];button.hidden=view==='assigned';button.dataset.quickAddType=action?.[0]||'';button.innerHTML=`<i data-lucide="plus"></i> ${action?.[1]||'إضافة جديدة'}`;if(window.lucide)window.lucide.createIcons({attrs:{'stroke-width':1.8}})}
   let currentView='dashboard',exitPromptArmed=false,exitPromptTimer=0;
   function showView(view){currentView=view;exitPromptArmed=false;document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));const el=document.getElementById('view-'+view)||document.getElementById(view==='searchResults'?'searchResults':'view-dashboard');el.classList.add('active');document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));document.getElementById('pageHeading').textContent=(TITLES[view]||['نتائج البحث','بحث شامل'])[0];document.getElementById('pageSub').textContent=(TITLES[view]||['نتائج البحث','بحث شامل'])[1];updateQuickAdd(view);if(view==='assigned')loadAssignedView()}
   const appShell=document.querySelector('.app'),sidebarToggle=document.getElementById('sidebarToggle'),SIDEBAR_STATE_KEY='aqarSidebarCollapsed';
