@@ -50,6 +50,7 @@
     'تمت إعادة إسناد المتابعة بنجاح':'Follow-up reassigned successfully',
     'لا يوجد مستخدمون متاحون للإسناد إليهم':'No eligible users available'
   });
+  Object.assign(translations,{'operation_in_progress':'هناك إجراء آخر قيد التنفيذ، انتظر حتى يكتمل.','جارٍ التنفيذ':'In progress — please wait.'});
   const originals = new WeakMap();
   const attributeOriginals = new WeakMap();
   let language = 'ar';
