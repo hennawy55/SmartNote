@@ -225,7 +225,7 @@ function cleanUsername_(v) {
 function insertUser_(username, password, role) {
   const sh = users_(), salt = randomHex_(16), row = sh.getLastRow() + 1, id = Utilities.getUuid();
   sh.getRange(row, 1, 1, 9).setValues([[id, username, hashPassword_(password, salt), salt, role, "active", new Date().toISOString(), false, "{}"]]);
-  return { row: row, values: sh.getRange(row, 1, 1, 9).getValues()[0] };
+  return { row: row, values: sh.getRange(row, 1, 1, 8).getValues()[0].concat([""]) };
 }
 function login_(req) {
   const username=cleanUsername_(req.username),cache=CacheService.getScriptCache(),attemptKey="smartnote_login_fail_"+hashToken_(username.toLowerCase()),attempts=Number(cache.get(attemptKey)||0);
