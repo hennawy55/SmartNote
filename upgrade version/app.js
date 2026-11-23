@@ -282,6 +282,7 @@
   const assignmentText=(ar,en)=>document.documentElement.lang==='en'?en:ar;
   const assignmentStatusLabels={new:['جديدة','New'],viewed:['تم الاطلاع','Viewed'],in_progress:['قيد التنفيذ','In progress'],paused:['متوقفة مؤقتاً','Paused'],completed:['مكتملة','Completed'],cancelled:['ملغاة','Cancelled']};
   const assignmentPriorityLabels={low:['منخفضة','Low'],normal:['عادية','Normal'],high:['مرتفعة','High'],urgent:['عاجلة','Urgent']};
+  function assignmentActionLabel(action){const labels={created:['تم الإنشاء','Created'],viewed:['تم الاطلاع','Viewed'],updated:['تم التحديث','Updated'],status_changed:['تغيير الحالة','Status changed'],reassigned:['إعادة إسناد','Reassigned'],reassignment_requested:['طلب إعادة إسناد','Reassignment requested'],reassignment_approved:['الموافقة على إعادة الإسناد','Reassignment approved'],reassignment_rejected:['رفض إعادة الإسناد','Reassignment rejected'],note_added:['إضافة ملاحظة','Note added'],archived:['أرشفة','Archived'],restored:['استعادة','Restored']};const pair=labels[action]||[action||'—',action||'—'];return assignmentText(pair[0],pair[1])}
   function assignmentDate(v){if(!v)return assignmentText('بدون موعد','No due date');const d=new Date(v);return Number.isNaN(d.getTime())?esc(v):esc(d.toLocaleString(document.documentElement.lang==='en'?'en-US':'ar-EG',{dateStyle:'medium',timeStyle:'short'}))}
   async function loadAssignedView(){if(!isReady)return;try{const [l,p]=await Promise.all([apiPost({action:'assignment_list'}),['admin','leader'].includes(currentUser?.role)?apiPost({action:'leader_users'}):Promise.resolve({users:[]})]);assignedItems=l.assignments||[];assignmentPeople=p.users||[];renderAssignedView()}catch(e){toast(assignmentText('تعذر تحميل المتابعات الموجهة: ','Could not load assigned follow-ups: ')+e.message)}}
   function renderAssignedView(){
@@ -322,12 +323,13 @@
   let assignmentActionInFlight=false;
   async function openAssignedDetail(id){
     if(assignmentActionInFlight)return;assignmentActionInFlight=true;
-    try{return await openAssignedDetailImpl(id)}finally{assignmentActionInFlight=false}
+    document.querySelectorAll('[data-assignment-open]').forEach(button=>{button.disabled=true;button.setAttribute('aria-busy','true')});
+    try{return await openAssignedDetailImpl(id)}finally{assignmentActionInFlight=false;document.querySelectorAll('[data-assignment-open]').forEach(button=>{button.disabled=false;button.removeAttribute('aria-busy')})}
   }
   async function openAssignedDetailImpl(id){
     closeAssignmentPopup(true);const t=assignmentText;try{
       const res=await apiPost({action:'assignment_detail',assignmentId:id}),a=res.assignment;
-      const canManage=['admin','leader'].includes(currentUser?.role)&&(a.ownerLeaderId===currentUser.id||currentUser.role==='admin');
+      const canManage=currentUser?.role==='admin'||a.ownerLeaderId===currentUser?.id;
       const canChange=canManage||a.assigneeId===currentUser?.id;
       const statusOptions=Object.entries(assignmentStatusLabels).map(([k,v])=>'<option value="'+k+'" '+(a.status===k?'selected':'')+'>'+t(v[0],v[1])+'</option>').join('');
       const notes=(a.notes||[]).map(n=>'<article class="assignment-note"><header><b>'+esc(n.authorName||'')+'</b><span class="pill">'+t(n.visibility==='shared'?'مشتركة':'خاصة',n.visibility==='shared'?'Shared':'Private')+'</span></header><p>'+esc(n.body||'')+'</p></article>').join('')||'<div class="empty-state">'+t('لا توجد ملاحظات','No notes')+'</div>';
@@ -341,9 +343,10 @@
       const content='<div class="assignment-detail-body"><div class="assignment-detail-summary"><h3>'+esc(a.type==='client'?(a.clientName||a.title):a.title)+'</h3><p>'+esc(a.description||t('لا يوجد وصف','No description'))+'</p></div><div class="assignment-detail-grid"><div><small>'+t('النوع','Type')+'</small><b>'+t(a.type==='client'?'عميل':'مهمة',a.type==='client'?'Client':'Task')+'</b></div><div><small>'+t('المنشئ','Created by')+'</small><b>'+esc(a.createdByName||'—')+'</b></div><div><small>'+t('الموزع الحالي','Current owner')+'</small><b>'+esc(a.ownerLeaderName||'—')+'</b></div><div><small>'+t('المسؤول','Assignee')+'</small><b>'+esc(a.assigneeName||'—')+'</b></div>'+(a.type==='client'?'<div><small>'+t('اسم العميل','Client name')+'</small><b>'+esc(a.clientName||a.title||'—')+'</b></div><div><small>'+t('رقم هاتف المتابعة','Follow-up phone')+'</small><b>'+esc(a.clientPhone||'—')+'</b></div>':'')+'<div><small>'+t('موعد المتابعة','Follow-up date')+'</small><b>'+assignmentDate(a.dueAt)+'</b></div><div><small>'+t('الأولوية','Priority')+'</small><b>'+t((assignmentPriorityLabels[a.priority]||['—','—'])[0],(assignmentPriorityLabels[a.priority]||['—','—'])[1])+'</b></div><div><small>'+t('آخر تحديث','Last updated')+'</small><b>'+assignmentDate(a.updatedAt)+'</b></div></div>'+actions+(requests?'<section class="assignment-pending-requests"><h3>'+t('طلبات إعادة الإسناد المعلقة','Pending reassignment requests')+'</h3>'+requests+'</section>':'')+'<section class="assignment-notes-section"><h3>'+t('الملاحظات','Notes')+'</h3>'+notes+'<form id="assignedNoteForm" class="assignment-note-form"><label>'+t('إضافة ملاحظة','Add a note')+'<textarea name="body" required></textarea></label><label>'+t('نوع الملاحظة','Visibility')+'<select name="visibility"><option value="private">'+t('خاصة','Private')+'</option><option value="shared">'+t('مشتركة','Shared')+'</option></select></label><button class="btn primary" type="submit">'+t('حفظ الملاحظة','Save note')+'</button></form></section></div>';
       const popup=showAssignmentPopup(t('تفاصيل المتابعة','Follow-up details'),content);
       if(window.lucide)window.lucide.createIcons({attrs:{'stroke-width':1.8}});
+      popup.querySelector('#assignmentHistoryButton')?.addEventListener('click',async()=>{const button=popup.querySelector('#assignmentHistoryButton');if(button.disabled)return;button.disabled=true;try{const result=await apiPost({action:'assignment_history',assignmentId:a.id});const rows=(result.history||[]).map(item=>'<article class="assignment-history-item"><b>'+esc(item.actorName||'')+'</b><span>'+esc(assignmentActionLabel(item.action))+'</span><small>'+assignmentDate(item.createdAt)+'</small></article>').join('')||'<div class="empty-state">'+t('لا يوجد سجل حركة','No activity history')+'</div>';showAssignmentPopup(t('سجل حركة المتابعة','Follow-up activity'),'<div class="assignment-history">'+rows+'</div>')}catch(error){toast(error.message)}finally{button.disabled=false}});
       popup.querySelector('#assignmentDirectReassignButton')?.addEventListener('click',async()=>{
         try{
-          const people=await apiPost({action:'leader_users',excludeUserId:a.assigneeId}),targets=(people.users||[]).filter(u=>u.id!==a.assigneeId&&u.id!==currentUser.id&&(!['leader'].includes(currentUser.role)||u.role!=='admin'));
+          const people=await apiPost({action:'assignment_targets',assignmentId:a.id,excludeUserId:a.assigneeId}),targets=(people.users||[]).filter(u=>u.id!==a.assigneeId&&u.id!==currentUser.id&&(currentUser.role==='admin'||u.role!=='admin'));
           if(!targets.length){toast(t('لا يوجد مستخدمون متاحون للإسناد إليهم','No eligible users available'));return}
           const options=targets.map(u=>'<option value="'+esc(u.id)+'">'+esc(u.username)+'</option>').join('');
           const transfer=showAssignmentPopup(t('إعادة إسناد المتابعة','Reassign follow-up'),'<form id="directReassignForm" class="assignment-transfer-form"><label>'+t('المستخدم الجديد','New assignee')+'<select class="filter-input" name="toUserId" required>'+options+'</select></label><div class="modal-foot"><button class="btn primary" type="submit">'+t('تأكيد إعادة الإسناد','Confirm reassignment')+'</button><button class="btn" type="button" data-popup-close>'+t('إلغاء','Cancel')+'</button></div></form>');
@@ -425,7 +428,8 @@
   window.addEventListener('online',()=>{if(isReady&&authToken)syncCloud();else initializeCloud()});
   window.addEventListener('offline',()=>{setConnection(false,'انقطع اتصال الإنترنت. ستتم إعادة المزامنة تلقائياً عند عودة الاتصال.')});
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){syncCloud();checkTaskNotifications()}});
-  setInterval(syncCloud,5000);
+  let lastVisibleSyncAt=0;
+  setInterval(()=>{if(!document.hidden&&Date.now()-lastVisibleSyncAt>=30000){lastVisibleSyncAt=Date.now();syncCloud()}},5000);
   setInterval(checkTaskNotifications,15000);
   if('serviceWorker'in navigator&&window.isSecureContext)navigator.serviceWorker.register('./sw.js').then(registration=>{serviceWorkerRegistration=registration}).catch(err=>toast('تعذر تجهيز إشعارات الهاتف: '+err.message));
   if(window.lucide)window.lucide.createIcons({attrs:{"stroke-width":1.8}});restoreTaskAlertState();refreshNotificationButton();renderAll();requestNotificationPermissionOnStartup();initializeCloud();
