@@ -4,11 +4,16 @@ on:
   push:
     branches: [main]
     paths:
-      - 'android/**'
-      - 'www/**'
+      - 'index.html'
+      - 'app.js'
+      - 'styles.css'
+      - 'theme.js'
+      - 'language.js'
+      - 'manifest.json'
+      - 'sw.js'
+      - 'android-notifications.js'
       - 'package.json'
       - 'capacitor.config.ts'
-      - 'scripts/**'
       - '.github/workflows/android-apk.yml'
 
 jobs:
@@ -31,13 +36,12 @@ jobs:
         uses: android-actions/setup-android@v3
       - name: Install dependencies
         run: npm install
-      - name: Prepare web assets and Android project
-        run: |
-          mkdir -p www
-          cp index.html app.js styles.css theme.js language.js manifest.json sw.js www/
-          if [ -d icons ]; then cp -r icons www/icons; fi
-          npx cap add android
-          npx cap sync android
+      - name: Prepare web assets and bundle native notification bridge
+        run: npm run prepare:android
+      - name: Create Android project
+        run: npx cap add android
+      - name: Sync Capacitor plugins
+        run: npx cap sync android
       - name: Build debug APK
         run: cd android && chmod +x gradlew && ./gradlew assembleDebug
       - name: Upload APK
