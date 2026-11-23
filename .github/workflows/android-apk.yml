@@ -44,6 +44,17 @@ jobs:
         run: npm install
       - name: Prepare web assets and bundle native notification bridge
         run: npm run prepare:android
+      - name: Prepare standalone web build
+        run: |
+          mkdir -p web-build
+          cp index.html app.js styles.css theme.js language.js manifest.json sw.js web-build/
+          if [ -d icons ]; then cp -r icons web-build/icons; fi
+      - name: Upload web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartnote-web-build
+          path: web-build/
+          if-no-files-found: error
       - name: Create Android project
         run: npx cap add android
       - name: Sync Capacitor plugins
