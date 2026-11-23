@@ -325,6 +325,12 @@ function setUserStatus_(id,status,actor) {
   return withScriptLock_(function(){
     if(!["active","disabled"].includes(status))throw new Error("invalid_status");
     const u=findUserById_(String(id));if(!u)throw new Error("user_not_found");
+    if(status==="disabled"){
+      const active=assignmentRows_().some(x=>!String(x.data.ArchivedAt||"")&&(String(x.data.AssigneeID)===String(id)||String(x.data.OwnerLeaderID)===String(id)));
+      if(active)throw new Error("user_has_active_assignments");
+      const pending=requestSheet_().getDataRange().getValues().slice(1).some(r=>(String(r[2])===String(id)||String(r[4])===String(id))&&String(r[7])==="pending");
+      if(pending)throw new Error("user_has_pending_requests");
+    }
     users_().getRange(u.row,6).setValue(status);if(status!=="active")revokeUserSessions_(id);audit_(actor,"user_status_changed",id,{status:status},"success");return true;
   });
 }
