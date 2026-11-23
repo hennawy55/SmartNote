@@ -54,7 +54,7 @@
   Object.assign(translations,{
     'too_many_attempts':'Too many sign-in attempts. Try again in 15 minutes.','تحميل إشعارات أقدم':'Load older notifications','جارٍ التحميل...':'Loading...','تعذر تحميل الإشعارات:':'Could not load notifications:','سجل التدقيق':'Audit log','لا توجد أحداث مسجلة.':'No audit events recorded.','System':'System',
     'user_has_active_assignments':'Reassign this account’s active follow-ups before disabling or deleting it.','user_has_pending_requests':'Resolve this account’s pending reassignment requests before disabling or deleting it.','user_manages_active_assignments':'Transfer this account’s active follow-up ownership before changing its role to User.','same_assignee':'Choose a different assignee.',
-    'cannot_delete_self':'You cannot delete your own account.','cannot_disable_self':'You cannot disable your own account.',
+    'cannot_delete_self':'You cannot delete your own account.','cannot_disable_self':'You cannot disable your own account.','last_active_admin':'At least one active administrator must remain in the system.',
     'unauthorized':'Invalid username or password, or your session has expired.',
     'login_failed':'Failed sign-in attempt','login_success':'Successful sign-in','user_status_changed':'Account status changed','user_role_changed':'Account role changed','password_reset':'Password reset','user_deleted':'Account deleted','user_created':'Account created','password_changed':'Password changed',
 
