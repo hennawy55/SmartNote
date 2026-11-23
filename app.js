@@ -318,7 +318,7 @@
     if(!exitPromptArmed){exitPromptArmed=true;toast(document.documentElement.lang==='en'?'Press Back again to exit the app.':'اضغط رجوع مرة أخرى للخروج من التطبيق.');clearTimeout(exitPromptTimer);exitPromptTimer=setTimeout(()=>exitPromptArmed=false,2500);return}
     exitPromptArmed=false;window.Capacitor?.Plugins?.App?.exitApp?.();
   }
-  try{const appPlugin=window.Capacitor?.Plugins?.App;if(appPlugin?.addListener)appPlugin.addListener('backButton',handleAppBack)}catch(error){console.warn('Android back handler unavailable',error)}
+  window.addEventListener('smartnote-back-button',handleAppBack);
   window.addEventListener('keydown',event=>{if(event.key==='Escape'){handleAppBack()}});
   document.addEventListener('pointerdown',unlockNotificationAudio,{once:true});
   document.addEventListener('keydown',unlockNotificationAudio,{once:true});
