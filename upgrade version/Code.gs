@@ -8,7 +8,7 @@ const PART_SIZE = 49900;
 const SESSION_DAYS = 30;
 const HASH_ROUNDS = 12000;
 const UPGRADE_SHEETS = {
-  Assignments: ["AssignmentID","Title","Description","Status","Priority","DueAt","CreatedAt","AssignedAt","UpdatedAt","CreatedBy","CreatedByName","OwnerLeaderID","OwnerLeaderName","AssigneeID","AssigneeName","ArchivedAt","ViewedAt"],
+  Assignments: ["AssignmentID","Title","Description","Status","Priority","DueAt","CreatedAt","AssignedAt","UpdatedAt","CreatedBy","CreatedByName","OwnerLeaderID","OwnerLeaderName","AssigneeID","AssigneeName","ArchivedAt","ViewedAt","Type","ClientName","ClientPhone"],
   AssignmentActivity: ["ActivityID","AssignmentID","ActorID","ActorName","Action","DetailsJSON","CreatedAt"],
   ReassignmentRequests: ["RequestID","AssignmentID","FromUserID","FromUserName","ToUserID","ToUserName","Reason","Status","RequestedAt","ReviewedAt","ReviewedByID","ReviewedByName"],
   AssignmentNotes: ["NoteID","AssignmentID","AuthorID","AuthorName","Visibility","Body","CreatedAt","UpdatedAt"],
@@ -44,6 +44,7 @@ function doPost(e) {
     if (action === "admin_delete") return withAdmin_(req.token, function () { deleteUser_(req.userId); return { ok: true }; });
     if (action === "assignment_list") return withSession_(req.token, function (user) { return { ok: true, assignments: listAssignments_(user) }; });
     if (action === "assignment_create") return withSession_(req.token, function (user) { return { ok: true, assignment: createAssignment_(user, req) }; });
+    if (action === "assignment_reassign") return withSession_(req.token, function (user) { return { ok: true, assignment: reassignAssignment_(user, req) }; });
     if (action === "assignment_update") return withSession_(req.token, function (user) { return { ok: true, assignment: updateAssignment_(user, req) }; });
     if (action === "assignment_status") return withSession_(req.token, function (user) { return { ok: true, assignment: updateAssignmentStatus_(user, req) }; });
     if (action === "assignment_archive") return withSession_(req.token, function (user) { return { ok: true, archived: archiveAssignment_(user, req.assignmentId, true) }; });
@@ -333,7 +334,7 @@ function deleteUser_(id) {
 
 
 /* Assignment workflow */
-function assignmentSheet_(){return sheet_("Assignments",UPGRADE_SHEETS.Assignments);}
+function assignmentSheet_(){const sh=sheet_("Assignments",UPGRADE_SHEETS.Assignments),headers=sh.getLastRow()?sh.getRange(1,1,1,Math.max(1,sh.getLastColumn())).getDisplayValues()[0]:[];UPGRADE_SHEETS.Assignments.forEach((name,i)=>{if(!headers[i])sh.getRange(1,i+1).setValue(name);else if(headers[i]!==name)throw new Error("schema_mismatch_Assignments");});sh.getRange(1,1,1,UPGRADE_SHEETS.Assignments.length).setFontWeight("bold");return sh;}
 function activitySheet_(){return sheet_("AssignmentActivity",UPGRADE_SHEETS.AssignmentActivity);}
 function requestSheet_(){return sheet_("ReassignmentRequests",UPGRADE_SHEETS.ReassignmentRequests);}
 function notesSheet_(){return sheet_("AssignmentNotes",UPGRADE_SHEETS.AssignmentNotes);}
@@ -348,17 +349,32 @@ function canSeeAssignment_(u,a){return canManageAssignment_(u,a)||String(a.Assig
 function assertAssignmentAccess_(u,a,manage){if(!a||(!canSeeAssignment_(u,a))||(manage&&!canManageAssignment_(u,a)))throw new Error("forbidden");}
 function activity_(id,u,action,details){activitySheet_().appendRow([Utilities.getUuid(),id,String(u.values[0]),String(u.values[1]),action,JSON.stringify(details||{}),new Date().toISOString()]);}
 function notify_(userId,assignmentId,type,title,body){if(!userId)return;notificationSheet_().appendRow([Utilities.getUuid(),userId,assignmentId||"",type,title,body,false,new Date().toISOString(),""]);}
-function assignmentPublic_(a){return {id:String(a.AssignmentID),title:String(a.Title||""),description:String(a.Description||""),status:String(a.Status||"new"),priority:String(a.Priority||"normal"),dueAt:String(a.DueAt||""),createdAt:String(a.CreatedAt||""),assignedAt:String(a.AssignedAt||""),updatedAt:String(a.UpdatedAt||""),createdBy:String(a.CreatedBy||""),createdByName:String(a.CreatedByName||""),ownerLeaderId:String(a.OwnerLeaderID||""),ownerLeaderName:String(a.OwnerLeaderName||""),assigneeId:String(a.AssigneeID||""),assigneeName:String(a.AssigneeName||""),archivedAt:String(a.ArchivedAt||""),viewedAt:String(a.ViewedAt||"")};}
+function assignmentPublic_(a){return {id:String(a.AssignmentID),title:String(a.Title||""),description:String(a.Description||""),type:String(a.Type||"task"),clientName:String(a.ClientName||""),clientPhone:String(a.ClientPhone||""),status:String(a.Status||"new"),priority:String(a.Priority||"normal"),dueAt:String(a.DueAt||""),createdAt:String(a.CreatedAt||""),assignedAt:String(a.AssignedAt||""),updatedAt:String(a.UpdatedAt||""),createdBy:String(a.CreatedBy||""),createdByName:String(a.CreatedByName||""),ownerLeaderId:String(a.OwnerLeaderID||""),ownerLeaderName:String(a.OwnerLeaderName||""),assigneeId:String(a.AssigneeID||""),assigneeName:String(a.AssigneeName||""),archivedAt:String(a.ArchivedAt||""),viewedAt:String(a.ViewedAt||"")};}
 function listAssignments_(u){return assignmentRows_().filter(x=>canSeeAssignment_(u,x.data)).map(x=>assignmentPublic_(x.data));}
-function listAssignableUsers_(u){return listUsers_().filter(x=>x.status==="active"&&x.id!==String(u.values[0])).map(x=>({id:x.id,username:x.username,role:x.role}));}
+function listAssignableUsers_(u){return listUsers_().filter(x=>x.status==="active"&&x.id!==String(u.values[0])&&(!isLeader_(u)||x.role!=="admin")).map(x=>({id:x.id,username:x.username,role:x.role}));}
 function createAssignment_(u,req){
  if(!isAdmin_(u)&&!isLeader_(u))throw new Error("forbidden");
- const title=String(req.title||"").trim();if(!title||title.length>180)throw new Error("invalid_title");
+ const type=req.assignmentType==="client"?"client":"task",clientName=String(req.clientName||"").trim(),clientPhone=String(req.clientPhone||"").trim();
+ const title=(type==="client"?(clientName?("متابعة عميل: "+clientName):""):String(req.title||"").trim());if(!title||title.length>180)throw new Error("invalid_title");
+ if(type==="client"&&!clientName)throw new Error("invalid_client_name");
  const target=findUserById_(String(req.assigneeId||""));if(!target||String(target.values[5])!=="active")throw new Error("user_not_found");
  const id=Utilities.getUuid(),now=new Date().toISOString(),leader=isLeader_(u)?u:findUserById_(String(u.values[0]));
  const ownerId=String(u.values[0]),ownerName=String(u.values[1]);
- const a={AssignmentID:id,Title:title,Description:String(req.description||"").slice(0,5000),Status:"new",Priority:["low","normal","high","urgent"].includes(req.priority)?req.priority:"normal",DueAt:String(req.dueAt||""),CreatedAt:now,AssignedAt:now,UpdatedAt:now,CreatedBy:String(u.values[0]),CreatedByName:String(u.values[1]),OwnerLeaderID:ownerId,OwnerLeaderName:ownerName,AssigneeID:String(target.values[0]),AssigneeName:String(target.values[1]),ArchivedAt:"",ViewedAt:""};
+ const a={AssignmentID:id,Title:title,Description:String(req.description||"").slice(0,5000),Status:"new",Priority:["low","normal","high","urgent"].includes(req.priority)?req.priority:"normal",DueAt:String(req.dueAt||""),CreatedAt:now,AssignedAt:now,UpdatedAt:now,CreatedBy:String(u.values[0]),CreatedByName:String(u.values[1]),OwnerLeaderID:ownerId,OwnerLeaderName:ownerName,AssigneeID:String(target.values[0]),AssigneeName:String(target.values[1]),ArchivedAt:"",ViewedAt:"",Type:type,ClientName:type==="client"?clientName:"",ClientPhone:type==="client"?clientPhone:""};
  assignmentSheet_().appendRow(UPGRADE_SHEETS.Assignments.map(k=>a[k]));activity_(id,u,"created",{assignee:a.AssigneeName});notify_(a.AssigneeID,id,"assigned","متابعة جديدة",title+" — تم إسناد متابعة إليك");
+ return assignmentPublic_(a);
+}
+function reassignAssignment_(u,req){
+ const x=assignmentById_(req.assignmentId);if(!x)throw new Error("user_not_found");const a=x.data;assertAssignmentAccess_(u,a,true);
+ if(!isAdmin_(u)&&!isLeader_(u))throw new Error("forbidden");
+ const target=findUserById_(String(req.toUserId||""));
+ if(!target||String(target.values[5])!=="active"||String(target.values[0])===String(u.values[0])||(isLeader_(u)&&String(target.values[4])==="admin"))throw new Error("user_not_found");
+ if(String(target.values[0])===String(a.AssigneeID))throw new Error("same_assignee");
+ const previous=a.AssigneeName,now=new Date().toISOString();a.AssigneeID=String(target.values[0]);a.AssigneeName=String(target.values[1]);a.AssignedAt=now;a.UpdatedAt=now;a.ViewedAt="";if(a.Status==="viewed")a.Status="new";
+ assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>a[k])]);
+ activity_(a.AssignmentID,u,"reassigned",{from:previous,to:a.AssigneeName,reason:String(req.reason||"").slice(0,1000)});
+ notify_(a.AssigneeID,a.AssignmentID,"assigned","متابعة جديدة",a.Title+" — تم إسناد متابعة إليك");
+ notify_(String(req.previousAssigneeId||""),a.AssignmentID,"reassigned","تم إعادة إسناد المتابعة",a.Title+" — تم إسنادها إلى "+a.AssigneeName);
  return assignmentPublic_(a);
 }
 function updateAssignment_(u,req){
