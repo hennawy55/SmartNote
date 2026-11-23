@@ -5,7 +5,8 @@ const ASSETS = [
   './app.js',
   './theme.js',
   './language.js',
-  './manifest.json'
+  './manifest.json',
+  './lucide.min.js'
 ];
 
 self.addEventListener('install', event => {
