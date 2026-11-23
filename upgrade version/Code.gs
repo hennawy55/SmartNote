@@ -320,7 +320,7 @@ function resetPassword_(id, password) {
 function changeOwnPassword_(u,oldPassword,newPassword){
  if(!validPassword_(newPassword))throw new Error("weak_password");
  if(hashPassword_(String(oldPassword||""),String(u.values[3]))!==String(u.values[2]))throw new Error("unauthorized");
- const salt=randomHex_(16);users_().getRange(u.row,3,1,2).setValues([[hashPassword_(newPassword,salt),salt]]);users_().getRange(u.row,9).setValue(false);users_().getRange(u.row,7).setValue(new Date().toISOString());return true;
+ const salt=randomHex_(16);users_().getRange(u.row,3,1,2).setValues([[hashPassword_(newPassword,salt),salt]]);users_().getRange(u.row,8).setValue(false);users_().getRange(u.row,7).setValue(new Date().toISOString());return true;
 }
 function revokeUserSessions_(id) {
   const sh = sessions_(), rows = sh.getDataRange().getValues();
