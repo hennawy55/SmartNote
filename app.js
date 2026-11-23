@@ -78,7 +78,8 @@
   function showGate(message){document.getElementById('onlineGateMessage').textContent=message;document.getElementById('onlineGate').style.display='flex'}
   function hideGate(){document.getElementById('onlineGate').style.display='none'}
   function updateQuickAdd(view){const button=document.getElementById('quickAdd'),action=QUICK_ACTIONS[view];button.dataset.quickAddType=action?.[0]||'';button.innerHTML=`<i data-lucide="plus"></i> ${action?.[1]||'إضافة جديدة'}`;if(window.lucide)window.lucide.createIcons({attrs:{'stroke-width':1.8}})}
-  function showView(view){document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));const el=document.getElementById('view-'+view)||document.getElementById(view==='searchResults'?'searchResults':'view-dashboard');el.classList.add('active');document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));document.getElementById('pageHeading').textContent=(TITLES[view]||['نتائج البحث','بحث شامل'])[0];document.getElementById('pageSub').textContent=(TITLES[view]||['نتائج البحث','بحث شامل'])[1];updateQuickAdd(view)}
+  let currentView='dashboard',exitPromptArmed=false,exitPromptTimer=0;
+  function showView(view){currentView=view;exitPromptArmed=false;document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));const el=document.getElementById('view-'+view)||document.getElementById(view==='searchResults'?'searchResults':'view-dashboard');el.classList.add('active');document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));document.getElementById('pageHeading').textContent=(TITLES[view]||['نتائج البحث','بحث شامل'])[0];document.getElementById('pageSub').textContent=(TITLES[view]||['نتائج البحث','بحث شامل'])[1];updateQuickAdd(view)}
   const appShell=document.querySelector('.app'),sidebarToggle=document.getElementById('sidebarToggle'),SIDEBAR_STATE_KEY='aqarSidebarCollapsed';
   function setSidebarCollapsed(collapsed){appShell.classList.toggle('sidebar-collapsed',collapsed);const language=document.documentElement.lang,icon=collapsed?'panel-left-open':'panel-left-close',label=language==='en'?(collapsed?'Expand sidebar':'Collapse sidebar'):(collapsed?'توسيع الشريط الجانبي':'طي الشريط الجانبي');sidebarToggle.innerHTML=`<i data-lucide="${icon}"></i>`;sidebarToggle.setAttribute('aria-label',label);sidebarToggle.title=label;try{localStorage.setItem(SIDEBAR_STATE_KEY,collapsed?'1':'0')}catch{}if(window.lucide)window.lucide.createIcons({attrs:{'stroke-width':1.8}})}
   sidebarToggle.onclick=()=>setSidebarCollapsed(!appShell.classList.contains('sidebar-collapsed'));try{setSidebarCollapsed(localStorage.getItem(SIDEBAR_STATE_KEY)==='1')}catch{setSidebarCollapsed(false)}
@@ -191,7 +192,7 @@
     if(!navigator.onLine||!authToken)return {queued:true};
     writesInProgress++;
     saveQueue=saveQueue.catch(()=>{}).then(()=>apiPost({action:'save',data:snapshot}));
-    try{const result=await saveQueue;clearPendingSync();cacheLocalDatabase(snapshot,false);return result}finally{writesInProgress--}
+    try{const result=await saveQueue;clearPendingSync();cacheLocalDatabase(snapshot,false);return result}catch(error){cacheLocalDatabase(snapshot,true);return {queued:true,error}}finally{writesInProgress--}
   }
   function normalizeDatabase(data){const d=data&&typeof data==='object'?data:{};return {...emptyDB(),...d,workspaces:Array.isArray(d.workspaces)?d.workspaces:(Array.isArray(d.spaces)?d.spaces:[]),tasks:Array.isArray(d.tasks)?d.tasks.map(task=>task.status==='قيد التنفيذ'&&!task.startedAt?{...task,startedAt:task.updatedAt||task.createdAt||null}:task):[]};}
   async function syncCloud(){
@@ -285,7 +286,7 @@
           currentUser=session.user||currentUser;
           localStorage.setItem(SESSION_KEY,JSON.stringify({token:authToken,user:currentUser}));
           if(hasPendingSync()){const local=readLocalDatabase();if(local){db=local;await apiPost({action:'save',data:cloudPayload(db)});clearPendingSync();cacheLocalDatabase(db,false)}else clearPendingSync()}
-          await afterLogin(session.data||{});
+          await afterLogin(hasPendingSync()?undefined:(session.data||{}));
           return;
         }
       }catch(err){
@@ -310,6 +311,15 @@
   document.addEventListener('click',event=>{if(!event.target.closest('.notification-center')){document.getElementById('notificationPanel').hidden=true;document.getElementById('notificationBell').setAttribute('aria-expanded','false')}});
   navigator.serviceWorker?.addEventListener('message',event=>{if(event.data?.type==='OPEN_TASK_NOTIFICATION'&&typeof event.data.taskId==='string'){showView('tasks');if(get('tasks',event.data.taskId))openForm('task',event.data.taskId)}});
   window.addEventListener('smartnote-open-task',event=>{const taskId=event.detail?.taskId;if(typeof taskId==='string'){showView('tasks');if(get('tasks',taskId))openForm('task',taskId)}});
+  function handleAppBack(){
+    const modal=document.querySelector('.modal-backdrop.show');if(modal){modal.classList.remove('show');editing=null;return}
+    const notificationPanel=document.getElementById('notificationPanel');if(notificationPanel&&!notificationPanel.hidden){notificationPanel.hidden=true;document.getElementById('notificationBell').setAttribute('aria-expanded','false');return}
+    if(currentView!=='dashboard'){showView('dashboard');return}
+    if(!exitPromptArmed){exitPromptArmed=true;toast(document.documentElement.lang==='en'?'Press Back again to exit the app.':'اضغط رجوع مرة أخرى للخروج من التطبيق.');clearTimeout(exitPromptTimer);exitPromptTimer=setTimeout(()=>exitPromptArmed=false,2500);return}
+    exitPromptArmed=false;window.Capacitor?.Plugins?.App?.exitApp?.();
+  }
+  try{const appPlugin=window.Capacitor?.Plugins?.App;if(appPlugin?.addListener)appPlugin.addListener('backButton',handleAppBack)}catch(error){console.warn('Android back handler unavailable',error)}
+  window.addEventListener('keydown',event=>{if(event.key==='Escape'){handleAppBack()}});
   document.addEventListener('pointerdown',unlockNotificationAudio,{once:true});
   document.addEventListener('keydown',unlockNotificationAudio,{once:true});
   window.addEventListener('online',()=>{if(isReady&&authToken)syncCloud();else initializeCloud()});
