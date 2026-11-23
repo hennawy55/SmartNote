@@ -42,6 +42,14 @@
     'متابعة عميل':'Client follow-up','متابعة عميل:':'Client follow-up:',
     'موعد المتابعة: ':'Follow-up date: ','المسؤول: ':'Assignee: ','الموزع: ':'Assigned by: '
   });
+  Object.assign(translations,{
+    'متابعة عميل':'Client follow-up','متابعة عميل:':'Client follow-up:',
+    'رقم هاتف المتابعة':'Follow-up phone number','رقم هاتف متابعة العميل':'Client follow-up phone number',
+    'المستخدم الجديد':'New assignee','تأكيد إعادة الإسناد':'Confirm reassignment',
+    'طلب إعادة الإسناد':'Request reassignment','سبب طلب النقل':'Reason for reassignment',
+    'تمت إعادة إسناد المتابعة بنجاح':'Follow-up reassigned successfully',
+    'لا يوجد مستخدمون متاحون للإسناد إليهم':'No eligible users available'
+  });
   const originals = new WeakMap();
   const attributeOriginals = new WeakMap();
   let language = 'ar';
