@@ -1,5 +1,5 @@
-const CACHE = 'sren-shell-online-v20';
-const ASSETS = ['./', './index.html', './styles.css', './app.js', './theme.js', './language.js', './manifest.json', './icons/icon-192.png', './icons/icon-512.png'];
+const CACHE = 'sren-shell-online-v21';
+const ASSETS = ['./', './index.html', './styles.css', './app.js', './theme.js', './language.js', './manifest.json'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
