@@ -369,8 +369,21 @@ function requestSheet_(){return sheet_("ReassignmentRequests",UPGRADE_SHEETS.Rea
 function notesSheet_(){return sheet_("AssignmentNotes",UPGRADE_SHEETS.AssignmentNotes);}
 function notificationSheet_(){return sheet_("Notifications",UPGRADE_SHEETS.Notifications);}
 function rowObject_(headers,row){const o={};headers.forEach((h,i)=>o[h]=row[i]);return o;}
-function assignmentRows_(){const sh=assignmentSheet_(),v=sh.getDataRange().getValues();return v.length<2?[]:v.slice(1).map((r,i)=>({row:i+2,data:rowObject_(UPGRADE_SHEETS.Assignments,r)}));}
-function assignmentById_(id){const x=assignmentRows_().find(x=>String(x.data.AssignmentID)===String(id));return x||null;}
+function clearAssignmentCache_(){CacheService.getScriptCache().remove("smartnote_assignment_rows_v1");}
+function assignmentRows_(){
+ const cache=CacheService.getScriptCache(),key="smartnote_assignment_rows_v1",cached=cache.get(key);
+ if(cached){try{return JSON.parse(cached)}catch(_){cache.remove(key)}}
+ const sh=assignmentSheet_(),v=sh.getDataRange().getValues();
+ const rows=v.length<2?[]:v.slice(1).map((r,i)=>({row:i+2,data:rowObject_(UPGRADE_SHEETS.Assignments,r)}));
+ const serialized=JSON.stringify(rows);if(serialized.length<90000)cache.put(key,serialized,15);
+ return rows;
+}
+function assignmentById_(id){
+ const sh=assignmentSheet_(),last=sh.getLastRow();if(last<2)return null;
+ const match=sh.getRange(2,1,last-1,1).createTextFinder(String(id)).matchEntireCell(true).findNext();
+ if(!match)return null;const row=match.getRow(),values=sh.getRange(row,1,UPGRADE_SHEETS.Assignments.length).getValues()[0];
+ return {row:row,data:rowObject_(UPGRADE_SHEETS.Assignments,values)};
+}
 function isAdmin_(u){return String(u.values[4])==="admin";}
 function isLeader_(u){return String(u.values[4])==="leader";}
 function canManageAssignment_(u,a){return isAdmin_(u)||String(a.OwnerLeaderID)===String(u.values[0]);}
@@ -390,7 +403,7 @@ function createAssignment_(u,req){
  const target=findUserById_(String(req.assigneeId||""));if(!target||String(target.values[5])!=="active"||(isLeader_(u)&&String(target.values[4])==="admin"))throw new Error("user_not_found");
  const id=Utilities.getUuid(),now=new Date().toISOString(),ownerId=String(u.values[0]),ownerName=String(u.values[1]);
  const a={AssignmentID:id,Title:title,Description:String(req.description||"").slice(0,5000),Status:"new",Priority:["low","normal","high","urgent"].includes(req.priority)?req.priority:"normal",DueAt:String(req.dueAt||""),CreatedAt:now,AssignedAt:now,UpdatedAt:now,CreatedBy:ownerId,CreatedByName:ownerName,OwnerLeaderID:ownerId,OwnerLeaderName:ownerName,AssigneeID:String(target.values[0]),AssigneeName:String(target.values[1]),ArchivedAt:"",ViewedAt:"",Type:type,ClientName:type==="client"?clientName:"",ClientPhone:type==="client"?clientPhone:""};
- assignmentSheet_().appendRow(UPGRADE_SHEETS.Assignments.map(k=>a[k]));activity_(id,u,"created",{assignee:a.AssigneeName});notify_(a.AssigneeID,id,"assigned","متابعة جديدة",title+" — تم إسناد متابعة إليك");
+ assignmentSheet_().appendRow(UPGRADE_SHEETS.Assignments.map(k=>a[k]));clearAssignmentCache_();activity_(id,u,"created",{assignee:a.AssigneeName});notify_(a.AssigneeID,id,"assigned","متابعة جديدة",title+" — تم إسناد متابعة إليك");
  return assignmentPublic_(a);
  });
 }
@@ -402,7 +415,7 @@ function reassignAssignment_(u,req){
  if(!target||String(target.values[5])!=="active"||String(target.values[0])===String(u.values[0])||(!isAdmin_(u)&&String(target.values[4])==="admin"))throw new Error("user_not_found");
  if(String(target.values[0])===String(a.AssigneeID))throw new Error("same_assignee");
  const previous=a.AssigneeName,previousId=a.AssigneeID,now=new Date().toISOString();a.AssigneeID=String(target.values[0]);a.AssigneeName=String(target.values[1]);a.AssignedAt=now;a.UpdatedAt=now;a.ViewedAt="";if(a.Status==="viewed")a.Status="new";
- assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>a[k])]);
+ assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>a[k])]);clearAssignmentCache_();
  activity_(a.AssignmentID,u,"reassigned",{from:previous,to:a.AssigneeName});notify_(a.AssigneeID,a.AssignmentID,"assigned","متابعة جديدة",a.Title+" — تم إسناد متابعة إليك");notify_(String(previousId||""),a.AssignmentID,"reassigned","تم إعادة إسناد المتابعة",a.Title+" — تم إسنادها إلى "+a.AssigneeName);
  return assignmentPublic_(a);
  });
@@ -421,12 +434,12 @@ function updateAssignmentStatus_(u,req){
   const status=String(req.status||"");if(!["new","viewed","in_progress","paused","completed","cancelled"].includes(status))throw new Error("invalid_status");
   if(a.Status===status)return assignmentPublic_(a);
   a.Status=status;a.UpdatedAt=new Date().toISOString();if(!a.ViewedAt&&String(u.values[0])===String(a.AssigneeID)){a.ViewedAt=a.UpdatedAt;activity_(a.AssignmentID,u,"viewed",{});}
-  assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>a[k])]);activity_(a.AssignmentID,u,"status_changed",{status:status});
+  assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>a[k])]);clearAssignmentCache_();activity_(a.AssignmentID,u,"status_changed",{status:status});
   if(status==="completed")notify_(a.OwnerLeaderID,a.AssignmentID,"completed","تم إغلاق المتابعة",a.Title+" — تم إغلاقها");
   return assignmentPublic_(a);
  });
 }
-function archiveAssignment_(u,id,archive){return withScriptLock_(function(){const x=assignmentById_(id);if(!x)throw new Error("user_not_found");assertAssignmentAccess_(u,x.data,true);x.data.ArchivedAt=archive?new Date().toISOString():"";x.data.UpdatedAt=new Date().toISOString();assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>x.data[k])]);activity_(id,u,archive?"archived":"restored",{});return true;});}
+function archiveAssignment_(u,id,archive){return withScriptLock_(function(){const x=assignmentById_(id);if(!x)throw new Error("user_not_found");assertAssignmentAccess_(u,x.data,true);x.data.ArchivedAt=archive?new Date().toISOString():"";x.data.UpdatedAt=new Date().toISOString();assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>x.data[k])]);clearAssignmentCache_();activity_(id,u,archive?"archived":"restored",{});return true;});}
 function requestReassignment_(u,req){
  return withScriptLock_(function(){
  const x=assignmentById_(req.assignmentId);if(!x)throw new Error("user_not_found");const a=x.data;assertAssignmentAccess_(u,a,false);
@@ -454,7 +467,7 @@ function reviewReassignment_(u,req){
   if(approve){
    x.data.AssigneeID=String(target.values[0]);x.data.AssigneeName=String(target.values[1]);x.data.OwnerLeaderID=String(target.values[0]);x.data.OwnerLeaderName=String(target.values[1]);x.data.AssignedAt=now;x.data.UpdatedAt=now;x.data.ViewedAt="";
    if(x.data.Status==="viewed")x.data.Status="new";
-   assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>x.data[k])]);
+   assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>x.data[k])]);clearAssignmentCache_();
   }
   try{sh.getRange(row,8,1,5).setValues([[approve?"approved":"rejected",now,String(u.values[0]),String(u.values[1]),""]]);}
   catch(writeError){if(approve)assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>originalAssignment[k])]);throw writeError;}
@@ -473,7 +486,7 @@ function addAssignmentNote_(u,req){
 }
 function assignmentDetail_(u,id,includeHistory){
  const x=assignmentById_(id);if(!x)throw new Error("user_not_found");assertAssignmentAccess_(u,x.data,false);
- if(!x.data.ViewedAt&&String(x.data.AssigneeID)===String(u.values[0])){x.data.ViewedAt=new Date().toISOString();if(x.data.Status==="new")x.data.Status="viewed";x.data.UpdatedAt=x.data.ViewedAt;assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>x.data[k])]);activity_(id,u,"viewed",{});}
+ if(!x.data.ViewedAt&&String(x.data.AssigneeID)===String(u.values[0])){x.data.ViewedAt=new Date().toISOString();if(x.data.Status==="new")x.data.Status="viewed";x.data.UpdatedAt=x.data.ViewedAt;assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>x.data[k])]);clearAssignmentCache_();activity_(id,u,"viewed",{});}
  const ns=notesSheet_(),nl=ns.getLastRow(),nb=Math.max(2,nl-1999),nr=nl>=2?ns.getRange(nb,1,nl-nb+1,8).getValues():[];
  const notes=nr.filter(r=>String(r[1])===String(id)&&(String(r[4])==="shared"||String(r[2])===String(u.values[0]))).map(r=>({id:r[0],authorId:r[2],authorName:r[3],visibility:r[4],body:r[5],createdAt:r[6]}));
  const rs=requestSheet_(),rl=rs.getLastRow(),rb=Math.max(2,rl-999),rr=rl>=2?rs.getRange(rb,1,rl-rb+1,12).getValues():[];
