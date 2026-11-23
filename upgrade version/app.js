@@ -395,5 +395,5 @@
   setInterval(syncCloud,5000);
   setInterval(checkTaskNotifications,15000);
   if('serviceWorker'in navigator&&window.isSecureContext)navigator.serviceWorker.register('./sw.js').then(registration=>{serviceWorkerRegistration=registration}).catch(err=>toast('تعذر تجهيز إشعارات الهاتف: '+err.message));
-  if(window.lucide)window.lucide.createIcons({attrs:{"stroke-width":1.8}});restoreTaskAlertState();refreshNotificationButton();renderAll();initializeCloud();
+  if(window.lucide)window.lucide.createIcons({attrs:{"stroke-width":1.8}});restoreTaskAlertState();refreshNotificationButton();renderAll();requestNotificationPermissionOnStartup();initializeCloud();
 })();
