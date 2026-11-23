@@ -425,7 +425,7 @@ function updateAssignment_(u,req){
   const x=assignmentById_(req.assignmentId);if(!x)throw new Error("user_not_found");const a=x.data;assertAssignmentAccess_(u,a,true);
   const sh=assignmentSheet_(),patch=req.patch||{},allowed=["Title","Description","Priority","DueAt"];
   allowed.forEach(k=>{if(Object.prototype.hasOwnProperty.call(patch,k)){if(k==="Title"&&!String(patch[k]).trim())throw new Error("invalid_title");if(k==="Priority"&&!["low","normal","high","urgent"].includes(String(patch[k])))throw new Error("invalid_priority");a[k]=String(patch[k]).slice(0,k==="Description"?5000:180);}});
-  a.UpdatedAt=new Date().toISOString();sh.getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>a[k])]);activity_(a.AssignmentID,u,"updated",patch);return assignmentPublic_(a);
+  a.UpdatedAt=new Date().toISOString();sh.getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>a[k])]);clearAssignmentCache_();activity_(a.AssignmentID,u,"updated",patch);return assignmentPublic_(a);
  });
 }
 function updateAssignmentStatus_(u,req){
@@ -470,7 +470,7 @@ function reviewReassignment_(u,req){
    assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>x.data[k])]);clearAssignmentCache_();
   }
   try{sh.getRange(row,8,1,5).setValues([[approve?"approved":"rejected",now,String(u.values[0]),String(u.values[1]),""]]);}
-  catch(writeError){if(approve)assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>originalAssignment[k])]);throw writeError;}
+  catch(writeError){if(approve){assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>originalAssignment[k])]);clearAssignmentCache_();}throw writeError;}
  activity_(x.data.AssignmentID,u,approve?"reassignment_approved":"reassignment_rejected",{requestId:id,to:approve?target.values[1]:""});
  if(approve)notify_(x.data.AssigneeID,x.data.AssignmentID,"assigned","متابعة محولة إليك",x.data.Title);
  notify_(r[2],x.data.AssignmentID,"reassignment_result",approve?"تمت الموافقة على النقل":"تم رفض النقل",x.data.Title);
