@@ -355,7 +355,7 @@ function listAssignableUsers_(u){return listUsers_().filter(x=>x.status==="activ
 function createAssignment_(u,req){
  if(!isAdmin_(u)&&!isLeader_(u))throw new Error("forbidden");
  const type=req.assignmentType==="client"?"client":"task",clientName=String(req.clientName||"").trim(),clientPhone=String(req.clientPhone||"").trim();
- const title=(type==="client"?(clientName?("متابعة عميل: "+clientName):""):String(req.title||"").trim());if(!title||title.length>180)throw new Error("invalid_title");
+ const title=(type==="client"?clientName:String(req.title||"").trim());if(!title||title.length>180)throw new Error("invalid_title");
  if(type==="client"&&!clientName)throw new Error("invalid_client_name");
  const target=findUserById_(String(req.assigneeId||""));if(!target||String(target.values[5])!=="active")throw new Error("user_not_found");
  const id=Utilities.getUuid(),now=new Date().toISOString(),leader=isLeader_(u)?u:findUserById_(String(u.values[0]));
