@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#762236">
+  <meta name="description" content="دفتر عقاري ذكي لتنظيم المشاريع والوحدات والعملاء والملاحظات">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <title>دفتر العقارات الذكي</title>
+  <script src="./theme.js"></script>
+  <script src="./language.js"></script>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-mark"><i data-lucide="building-2"></i></div><div class="brand-copy"><strong>دفتر العقارات</strong><small>SMART REAL ESTATE NOTEBOOK</small></div><button class="btn icon sidebar-toggle" id="sidebarToggle" type="button" aria-label="طي الشريط الجانبي" title="طي الشريط الجانبي"><i data-lucide="panel-left-close"></i></button></div>
+    <div><div class="nav-label">القائمة الرئيسية</div><nav class="nav" id="sideNav">
+      <button class="active" data-view="dashboard" title="الرئيسية" aria-label="الرئيسية"><span class="nav-ico"><i data-lucide="layout-dashboard"></i></span><span class="nav-text">الرئيسية</span></button>
+      <button data-view="workspaces" title="مساحات العمل" aria-label="مساحات العمل"><span class="nav-ico"><i data-lucide="layers"></i></span><span class="nav-text">مساحات العمل</span></button>
+      <button data-view="projects" title="المشاريع" aria-label="المشاريع"><span class="nav-ico"><i data-lucide="building-2"></i></span><span class="nav-text">المشاريع</span></button>
+      <button data-view="units" title="الوحدات" aria-label="الوحدات"><span class="nav-ico"><i data-lucide="house"></i></span><span class="nav-text">الوحدات</span></button>
+      <button data-view="notes" title="الملاحظات" aria-label="الملاحظات"><span class="nav-ico"><i data-lucide="notebook-pen"></i></span><span class="nav-text">الملاحظات</span></button>
+      <button data-view="clients" title="العملاء" aria-label="العملاء"><span class="nav-ico"><i data-lucide="users"></i></span><span class="nav-text">العملاء</span></button>
+      <button data-view="tasks" title="المتابعات" aria-label="المتابعات"><span class="nav-ico"><i data-lucide="calendar-clock"></i></span><span class="nav-text">المتابعات</span></button>
+    </nav></div>
+    <div class="side-bottom">
+      <div class="connection"><div class="connection-row"><span class="dot" id="connectionDot"></span><b id="connectionText">جاري الاتصال...</b></div><small id="connectionHint">يتم تحميل بياناتك من Google Sheets.</small></div>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="topbar"><div class="page-title"><h1 id="pageHeading">الرئيسية</h1><p id="pageSub">ملخص سريع لكل بياناتك العقارية</p></div><div class="top-actions"><div class="notification-center"><button class="btn notification-bell" id="notificationBell" type="button" aria-label="الإشعارات" aria-expanded="false" aria-controls="notificationPanel"><span aria-hidden="true"><i data-lucide="bell"></i></span><span class="notification-count" id="notificationCount" hidden>0</span></button><section class="notification-panel" id="notificationPanel" aria-label="الإشعارات" hidden><div class="notification-panel-head"><h2>إشعارات المتابعات <span id="notificationPanelCount">(0)</span></h2><button class="btn small" id="notificationSnoozeToggle">إيقافها ساعة</button></div><p class="notification-status" id="notificationStatus" hidden></p><div class="notification-panel-list" id="taskAlerts"></div></section></div><button class="btn icon theme-toggle" id="themeToggle" type="button" aria-label="تفعيل الوضع الداكن" title="تفعيل الوضع الداكن"><i data-lucide="moon"></i></button><button class="btn language-toggle" id="languageToggle" type="button" aria-label="Switch to English" title="Switch to English">EN</button><div class="search"><span><i data-lucide="search"></i></span><input id="globalSearch" placeholder="ابحث عن مشروع أو وحدة أو ملاحظة أو عميل..."></div><button class="btn primary" id="quickAdd"><i data-lucide="plus"></i> إضافة جديدة</button></div></header>
+    <section class="view active" id="view-dashboard">
+      <div class="stats">
+        <div class="stat"><div class="stat-top"><span>مساحات العمل</span><span class="stat-icon"><i data-lucide="layers"></i></span></div><strong id="statSpaces">0</strong><small>مساحة منظمة</small></div>
+        <div class="stat"><div class="stat-top"><span>المشاريع</span><span class="stat-icon"><i data-lucide="building-2"></i></span></div><strong id="statProjects">0</strong><small>مشروع محفوظ</small></div>
+        <div class="stat"><div class="stat-top"><span>الوحدات</span><span class="stat-icon"><i data-lucide="house"></i></span></div><strong id="statUnits">0</strong><small>وحدة مسجلة</small></div>
+        <div class="stat"><div class="stat-top"><span>الملاحظات</span><span class="stat-icon"><i data-lucide="notebook-pen"></i></span></div><strong id="statNotes">0</strong><small>معلومة محفوظة</small></div>
+      </div>
+      <div class="section-head"><div><h2>نظرة عامة</h2><p>آخر ما تم تسجيله في دفتر العقارات</p></div><button class="btn small" data-view="notes">كل الملاحظات ←</button></div>
+      <div class="grid-2"><div class="panel"><h3>أحدث الإجراءات</h3><div id="dashboardActivity" class="list"></div></div><div class="panel"><h3>مساحات العمل</h3><div id="dashboardSpaces" class="list"></div></div></div>
+      <div class="section-head"><div><h2>المتابعات المفتوحة</h2><p>مرتبة حسب الأولوية ثم موعد المتابعة</p></div><div class="toolbar"><button class="btn small" id="enableNotifications">تفعيل التنبيهات</button><button class="btn small" id="dashboardSnoozeNotifications">إيقاف التنبيهات ساعة</button><button class="btn small" data-view="tasks">كل المتابعات ←</button></div></div>
+      <div class="cards" id="dashboardTasks"></div>
+      <div class="section-head"><div><h2>الوصول السريع</h2><p>ابدأ بتسجيل معلومة جديدة</p></div></div>
+      <div class="cards">
+        <div class="entity-card quick-action-card"><h3>＋ مشروع جديد</h3><p>سجل بيانات مشروع ومطور وموقع وأنظمة سداد.</p><button class="btn primary small" data-add="project">إضافة مشروع</button></div>
+        <div class="entity-card quick-action-card"><h3>＋ ملاحظة سريعة</h3><p>سجل معلومة فوراً واربطها بمشروع أو وحدة.</p><button class="btn primary small" data-add="note">كتابة ملاحظة</button></div>
+        <div class="entity-card quick-action-card"><h3>＋ وحدة جديدة</h3><p>احفظ المساحة والسعر والتفاصيل الخاصة بالوحدة.</p><button class="btn primary small" data-add="unit">إضافة وحدة</button></div>
+      </div>
+    </section>
+    <section class="view" id="view-workspaces"><div class="cards" id="workspaceList"></div></section>
+    <section class="view" id="view-projects"><div class="toolbar"><input class="filter-input" id="projectFilter" placeholder="تصفية المشاريع..."><select class="filter-input" id="projectWorkspaceFilter"><option value="">كل المساحات</option></select></div><div class="section-spacer"></div><div class="cards" id="projectList"></div></section>
+    <section class="view" id="view-units"><div class="toolbar"><input class="filter-input" id="unitFilter" placeholder="بحث في الوحدات..."><select class="filter-input" id="unitProjectFilter"><option value="">كل المشاريع</option></select></div><div class="section-spacer"></div><div class="cards" id="unitList"></div></section>
+    <section class="view" id="view-notes"><div class="toolbar"><input class="filter-input" id="noteFilter" placeholder="ابحث في الملاحظات..."><select class="filter-input" id="noteWorkspaceFilter"><option value="">كل المساحات</option></select></div><div class="section-spacer"></div><div class="cards" id="noteList"></div></section>
+    <section class="view" id="view-clients"><div class="cards" id="clientList"></div></section>
+    <section class="view" id="view-tasks"><div class="toolbar task-filters"><label class="task-filter-field task-search-field"><span>بحث</span><input class="filter-input" id="taskSearch" placeholder="ابحث في المتابعات..."></label><label class="task-filter-field"><span>الأولوية</span><select class="filter-input" id="taskPriorityFilter"><option value="">كل الأولويات</option><option value="عاجلة">عاجلة</option><option value="مهمة">مهمة</option><option value="عادية">عادية</option></select></label><label class="task-filter-field"><span>من تاريخ</span><input class="filter-input" id="taskDateFrom" type="date" aria-label="من تاريخ"></label><label class="task-filter-field"><span>إلى تاريخ</span><input class="filter-input" id="taskDateTo" type="date" aria-label="إلى تاريخ"></label></div><div class="task-groups"><details class="task-group" open><summary>معلقة <span id="taskPendingCount">0</span></summary><div class="task-group-content"><div class="cards" id="taskPendingList"></div></div></details><details class="task-group" open><summary>قيد التنفيذ <span id="taskInProgressCount">0</span></summary><div class="task-group-content"><div class="cards" id="taskInProgressList"></div></div></details><details class="task-group" open><summary>مكتملة <span id="taskCompletedCount">0</span></summary><div class="task-group-content"><div class="cards" id="taskCompletedList"></div></div></details></div></section>
+    <div id="searchResults" class="view"><div class="section-head"><div><h2>نتائج البحث</h2><p id="searchCaption"></p></div><button class="btn" data-view="dashboard">العودة للرئيسية</button></div><div class="cards" id="searchList"></div></div>
+  </main>
+</div>
+<nav class="mobile-nav" id="mobileNav"><button class="active" data-view="dashboard"><span><i data-lucide="layout-dashboard"></i></span>الرئيسية</button><button data-view="projects"><span><i data-lucide="building-2"></i></span>المشاريع</button><button data-view="units"><span><i data-lucide="house"></i></span>الوحدات</button><button data-view="clients"><span><i data-lucide="users"></i></span>العملاء</button><button data-view="tasks"><span><i data-lucide="calendar-clock"></i></span>المتابعات</button><button data-view="notes"><span><i data-lucide="notebook-pen"></i></span>الملاحظات</button><button data-view="workspaces"><span><i data-lucide="layers"></i></span>المساحات</button></nav>
+<div class="modal-backdrop" id="modalBackdrop"><div class="modal"><div class="modal-head"><h2 id="modalTitle">إضافة</h2><button class="btn icon-btn ghost" id="closeModal">×</button></div><form id="entityForm"><div id="formFields" class="form-grid"></div><div class="modal-foot"><button class="btn primary" type="submit">حفظ البيانات</button><button class="btn" type="button" id="cancelModal">إلغاء</button></div></form></div></div>
+<div class="modal-backdrop" id="detailBackdrop" role="dialog" aria-modal="true" aria-labelledby="detailTitle"><div class="modal detail-modal"><div class="modal-head"><h2 id="detailTitle">تفاصيل السجل</h2><button class="btn icon-btn ghost" id="detailClose" type="button" aria-label="إغلاق"><i data-lucide="x"></i></button></div><dl class="detail-grid" id="detailFields"></dl><div class="modal-foot"><button class="btn primary" id="detailEdit" type="button"><i data-lucide="pencil"></i> تعديل</button><button class="btn" id="detailDismiss" type="button">إغلاق</button></div></div></div>
+<div class="modal-backdrop" id="confirmBackdrop" role="dialog" aria-modal="true" aria-labelledby="confirmTitle"><div class="modal modal-confirm"><div class="modal-head"><h2 id="confirmTitle">تأكيد الحذف</h2><button class="btn icon-btn ghost" id="cancelConfirmClose" type="button" aria-label="إغلاق">×</button></div><p id="confirmMessage" class="confirm-message">هل تريد حذف هذا السجل نهائياً من قاعدة البيانات؟</p><div class="modal-foot"><button class="btn danger" id="confirmAccept" type="button">حذف نهائي</button><button class="btn" id="confirmCancel" type="button">إلغاء</button></div></div></div>
+<div class="modal-backdrop" id="quickAddBackdrop" role="dialog" aria-modal="true" aria-labelledby="quickAddTitle"><div class="modal modal-quick-add"><div class="modal-head"><h2 id="quickAddTitle">إضافة جديدة</h2><button class="btn icon-btn ghost" id="quickAddClose" type="button" aria-label="إغلاق">×</button></div><div class="cards quick-add-grid"><button class="btn" data-quick-type="project">مشروع</button><button class="btn" data-quick-type="unit">وحدة</button><button class="btn" data-quick-type="note">ملاحظة</button><button class="btn" data-quick-type="client">عميل</button><button class="btn" data-quick-type="task">متابعة</button><button class="btn" data-quick-type="workspace">مساحة عمل</button></div></div></div>
+<div id="onlineGate" class="online-gate">
+  <div class="online-gate-card">
+    <div class="online-gate-icon">☁</div><h2 class="online-gate-title">الاتصال بالإنترنت مطلوب</h2>
+    <p id="onlineGateMessage" class="online-gate-message">هذا التطبيق يعمل أونلاين فقط، ويحتاج اتصالاً بقاعدة بيانات Google Sheets.</p>
+    <button class="btn primary" id="retryConnection">إعادة المحاولة</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script src="./app.js"></script>
+</body>
+</html>
