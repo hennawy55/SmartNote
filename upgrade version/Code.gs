@@ -28,6 +28,7 @@ function doPost(e) {
     if (action === "bootstrap") return bootstrap_(req);
     if (action === "login") return login_(req);
     if (action === "logout") return logout_(req);
+    if (action === "change_password") return withSession_(req.token, function (user) { return { ok: true, changed: changeOwnPassword_(user, req.oldPassword, req.newPassword) }; });
     if (action === "me") return withSession_(req.token, function (user) { return { ok: true, user: publicUser_(user), data: readDatabase_(user.row) }; });
     if (action === "load") return withSession_(req.token, function (user) { return { ok: true, data: readDatabase_(user.row) }; });
     if (action === "save") return withSession_(req.token, function (user) {
@@ -138,7 +139,7 @@ function findUser_(username) {
   for (let i = 1; i < values.length; i++) if (String(values[i][1]).toLowerCase() === String(username).toLowerCase()) return { row: i + 1, values: values[i] };
   return null;
 }
-function publicUser_(u) { return { id: String(u.values[0]), username: String(u.values[1]), role: String(u.values[4]), status: String(u.values[5]) }; }
+function publicUser_(u) { return { id: String(u.values[0]), username: String(u.values[1]), role: String(u.values[4]), status: String(u.values[5]), mustChangePassword: String(u.values[8]) === "true" || String(u.values[8]) === "TRUE" }; }
 function bootstrap_(req) {
   const props = PropertiesService.getScriptProperties();
   const key = props.getProperty("BOOTSTRAP_KEY");
@@ -202,7 +203,7 @@ function sessionCacheKey_(tokenHash) { return "smartnote_session_" + tokenHash; 
 function cacheSession_(tokenHash, user, expiresAt) {
   const seconds = Math.max(1, Math.min(21600, Math.floor((Date.parse(expiresAt) - Date.now()) / 1000)));
   // Never put password hashes or salts in the shared script cache.
-  const safeUser = { row: user.row, values: [String(user.values[0]), String(user.values[1]), "", "", String(user.values[4]), String(user.values[5]), String(user.values[6] || "")] };
+  const safeUser = { row: user.row, values: [String(user.values[0]), String(user.values[1]), "", "", String(user.values[4]), String(user.values[5]), String(user.values[6] || ""), "", String(user.values[8] || false)] };
   if (seconds > 0) CacheService.getScriptCache().put(sessionCacheKey_(tokenHash), JSON.stringify({ user: safeUser, expiresAt: expiresAt }), seconds);
 }
 function clearSessionCache_(tokenHash) {
@@ -232,7 +233,7 @@ function findUserById_(id) {
     .createTextFinder(String(id)).matchEntireCell(true).findNext();
   if (!match) return null;
   const row = match.getRow();
-  return { row: row, values: sh.getRange(row, 1, 1, 8).getValues()[0] };
+  return { row: row, values: sh.getRange(row, 1, 1, 9).getValues()[0] };
 }
 function withSession_(token, fn) { return json_(fn(sessionUser_(token))); }
 function withAdmin_(token, fn) { const u = sessionUser_(token); if (String(u.values[4]) !== "admin") throw new Error("forbidden"); return json_(fn(u)); }
@@ -287,6 +288,11 @@ function resetPassword_(id, password) {
   const salt = randomHex_(16), sh = users_();
   sh.getRange(u.row, 3, 1, 2).setValues([[hashPassword_(password, salt), salt]]);
   revokeUserSessions_(id);
+}
+function changeOwnPassword_(u,oldPassword,newPassword){
+ if(!validPassword_(newPassword))throw new Error("weak_password");
+ if(hashPassword_(String(oldPassword||""),String(u.values[3]))!==String(u.values[2]))throw new Error("unauthorized");
+ const salt=randomHex_(16);users_().getRange(u.row,3,1,2).setValues([[hashPassword_(newPassword,salt),salt]]);users_().getRange(u.row,9).setValue(false);users_().getRange(u.row,7).setValue(new Date().toISOString());return true;
 }
 function revokeUserSessions_(id) {
   const sh = sessions_(), rows = sh.getDataRange().getValues();
