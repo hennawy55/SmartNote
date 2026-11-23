@@ -419,3 +419,10 @@ html[dir="ltr"] .admin-password-row{direction:ltr}
   #view-assigned .task-filters{grid-template-columns:repeat(2,minmax(0,1fr))}
   #view-assigned .task-group-content .cards{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+
+/* Dashboard follow-up panels align with the recent activity and workspace panels */
+.dashboard-followup-panel{display:grid;gap:12px;padding:clamp(14px,2.2vw,20px);margin:18px 0;border:1px solid var(--line);border-radius:20px;background:var(--panel);box-shadow:0 12px 30px rgba(25,30,45,.045)}
+.dashboard-followup-panel .section-head{margin:0;align-items:center;flex-wrap:wrap}
+.dashboard-followup-panel .cards{min-width:0}
+.dashboard-followup-panel .empty-state,.dashboard-followup-panel .empty{min-height:105px;display:grid;place-content:center;text-align:center}
+@media(max-width:700px){.dashboard-followup-panel{padding:13px;border-radius:17px;margin:14px 0}.dashboard-followup-panel .section-head{align-items:flex-start}.dashboard-followup-panel .section-head>.btn{flex:none}}
