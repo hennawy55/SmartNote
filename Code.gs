@@ -115,6 +115,30 @@ function bootstrap_(req) {
   props.deleteProperty("BOOTSTRAP_KEY");
   return json_({ ok: true, user: publicUser_(user) });
 }
+/**
+ * Run manually from the Apps Script editor once the database sheets are initialized.
+ * Prompts for the first administrator and refuses to run if an account already exists.
+ */
+function createFirstAdminFromPrompt() {
+  const ui = SpreadsheetApp.getUi();
+  const sh = users_();
+  if (sh.getLastRow() > 1) {
+    ui.alert("SmartNote", "يوجد مستخدمون بالفعل. لن يتم إنشاء مدير أول جديد.", ui.ButtonSet.OK);
+    return;
+  }
+  const usernamePrompt = ui.prompt("إنشاء مدير SmartNote", "أدخل اسم المستخدم (3-40 حرفاً إنجليزياً أو أرقاماً):", ui.ButtonSet.OK_CANCEL);
+  if (usernamePrompt.getSelectedButton() !== ui.Button.OK) return;
+  const passwordPrompt = ui.prompt("إنشاء كلمة مرور المدير", "أدخل كلمة مرور لا تقل عن 10 أحرف:", ui.ButtonSet.OK_CANCEL);
+  if (passwordPrompt.getSelectedButton() !== ui.Button.OK) return;
+  const username = cleanUsername_(usernamePrompt.getResponseText());
+  const password = passwordPrompt.getResponseText();
+  if (!validPassword_(password)) {
+    ui.alert("كلمة المرور يجب أن تكون من 10 إلى 128 حرفاً.");
+    return;
+  }
+  const created = insertUser_(username, password, "admin");
+  ui.alert("تم إنشاء المدير بنجاح: " + publicUser_(created).username);
+}
 function cleanUsername_(v) {
   const s = String(v || "").trim();
   if (!/^[a-zA-Z0-9_.-]{3,40}$/.test(s)) throw new Error("invalid_username");
@@ -148,30 +172,28 @@ function clearSessionCache_(tokenHash) {
 function hashToken_(token) { return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(token), Utilities.Charset.UTF_8)); }
 function sessionUser_(token) {
   if (!token || typeof token !== "string" || token.length < 32) throw new Error("unauthorized");
-  const wanted = hashToken_(token), now = Date.now(), cache = CacheService.getScriptCache();
-  const cached = cache.get(sessionCacheKey_(wanted));
-  if (cached) {
-    try {
-      const item = JSON.parse(cached);
-      if (Date.parse(item.expiresAt) > now && item.user && String(item.user.values[5]) === "active") return item.user;
-      clearSessionCache_(wanted);
-    } catch (_) { clearSessionCache_(wanted); }
+  const wanted = hashToken_(token);
+  const sh = sessions_();
+  const match = sh.getRange(2, 1, Math.max(1, sh.getLastRow() - 1), 1)
+    .createTextFinder(wanted).matchEntireCell(true).findNext();
+  if (!match) throw new Error("unauthorized");
+  const row = match.getRow();
+  const record = sh.getRange(row, 1, 1, 4).getValues()[0];
+  if (Date.parse(record[2]) <= Date.now()) {
+    sh.deleteRow(row);
+    throw new Error("unauthorized");
   }
-  const sh = sessions_(), rows = sh.getDataRange().getValues();
-  for (let i = rows.length - 1; i >= 1; i--) {
-    if (String(rows[i][0]) !== wanted) continue;
-    if (Date.parse(rows[i][2]) <= now) { sh.deleteRow(i + 1); clearSessionCache_(wanted); throw new Error("unauthorized"); }
-    const u = findUserById_(String(rows[i][1]));
-    if (!u || String(u.values[5]) !== "active") { clearSessionCache_(wanted); throw new Error("inactive_user"); }
-    cacheSession_(wanted, u, String(rows[i][2]));
-    return u;
-  }
-  throw new Error("unauthorized");
+  const user = findUserById_(String(record[1]));
+  if (!user || String(user.values[5]) !== "active") throw new Error("inactive_user");
+  return user;
 }
 function findUserById_(id) {
-  const sh = users_(), rows = sh.getDataRange().getValues();
-  for (let i = 1; i < rows.length; i++) if (String(rows[i][0]) === id) return { row: i + 1, values: rows[i] };
-  return null;
+  const sh = users_();
+  const match = sh.getRange(2, 1, Math.max(1, sh.getLastRow() - 1), 1)
+    .createTextFinder(String(id)).matchEntireCell(true).findNext();
+  if (!match) return null;
+  const row = match.getRow();
+  return { row: row, values: sh.getRange(row, 1, 1, 8).getValues()[0] };
 }
 function withSession_(token, fn) { return json_(fn(sessionUser_(token))); }
 function withAdmin_(token, fn) { const u = sessionUser_(token); if (String(u.values[4]) !== "admin") throw new Error("forbidden"); return json_(fn(u)); }
