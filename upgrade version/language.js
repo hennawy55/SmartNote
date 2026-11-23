@@ -74,8 +74,7 @@
     'database_not_configured':'The database has not been configured.',
     'invalid_action':'This action is not supported.',
     'invalid_data':'The submitted data is invalid.',
-    'server_error':'The server could not complete the request. Please try again.'
-
+    'server_error':'The server could not complete the request. Please try again.',
     'هل تريد حذف هذا المستخدم؟ لا يمكن التراجع عن هذه العملية.':'Delete this user? This action cannot be undone.',
     'تم حذف المستخدم بنجاح':'User deleted successfully.',
     'حذف المستخدم':'Delete user',
