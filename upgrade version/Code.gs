@@ -272,9 +272,10 @@ function withScriptLock_(fn) { const lock=LockService.getScriptLock(); if(!lock.
 function withSession_(token, fn) { return json_(fn(sessionUser_(token))); }
 function withAdmin_(token, fn) { const u = sessionUser_(token); if (String(u.values[4]) !== "admin") throw new Error("forbidden"); return json_(fn(u)); }
 function logout_(req) {
-  const sh = sessions_(), rows = sh.getDataRange().getValues(), wanted = hashToken_(String(req.token || ""));
-  for (let i = rows.length - 1; i >= 1; i--) if (String(rows[i][0]) === wanted) sh.deleteRow(i + 1);
-  return json_({ ok: true });
+  const token=String(req.token||"");if(!token)return json_({ok:true});
+  const sh=sessions_(),rows=sh.getDataRange().getValues(),wanted=hashToken_(token);
+  for(let i=rows.length-1;i>=1;i--)if(String(rows[i][0])===wanted){clearSessionCache_(wanted);sh.deleteRow(i+1);}
+  return json_({ok:true});
 }
 function splitSafe_(text) {
   const parts = []; let start = 0;
@@ -306,22 +307,27 @@ function listUsers_() {
   return rows.map((r,i)=>({id:String(r[0]),username:String(r[1]),role:String(r[4]),status:String(r[5]),updatedAt:String(r[6]),row:i+2}));
 }
 function createUser_(req) {
-  const username = cleanUsername_(req.username);
-  if (!validPassword_(req.password)) throw new Error("weak_password");
-  if (findUser_(username)) throw new Error("username_exists");
-  return publicUser_(insertUser_(username, req.password, ["admin","leader","user"].includes(req.role) ? req.role : "user"));
+  return withScriptLock_(function(){
+    const username=cleanUsername_(req.username);
+    if(!validPassword_(req.password))throw new Error("weak_password");
+    if(findUser_(username))throw new Error("username_exists");
+    return publicUser_(insertUser_(username,req.password,["admin","leader","user"].includes(req.role)?req.role:"user"));
+  });
 }
-function setUserStatus_(id, status) {
-  if (!["active", "disabled"].includes(status)) throw new Error("invalid_status");
-  const u = findUserById_(String(id)); if (!u) throw new Error("user_not_found");
-  u.values[5] = status; users_().getRange(u.row, 6).setValue(status); if (status !== "active") revokeUserSessions_(id); return true;
+function setUserStatus_(id,status) {
+  return withScriptLock_(function(){
+    if(!["active","disabled"].includes(status))throw new Error("invalid_status");
+    const u=findUserById_(String(id));if(!u)throw new Error("user_not_found");
+    users_().getRange(u.row,6).setValue(status);if(status!=="active")revokeUserSessions_(id);return true;
+  });
 }
 function resetPassword_(id,password) {
-  if(!validPassword_(password))throw new Error("weak_password");
-  const u=findUserById_(String(id));if(!u)throw new Error("user_not_found");
-  const salt=randomHex_(16),sh=users_();
-  sh.getRange(u.row,3,1,2).setValues([[hashPassword_(password,salt),salt]]);
-  sh.getRange(u.row,8).setValue(true);revokeUserSessions_(id);
+  return withScriptLock_(function(){
+    if(!validPassword_(password))throw new Error("weak_password");
+    const u=findUserById_(String(id));if(!u)throw new Error("user_not_found");
+    const salt=randomHex_(16),sh=users_();sh.getRange(u.row,3,1,2).setValues([[hashPassword_(password,salt),salt]]);
+    sh.getRange(u.row,8).setValue(true);revokeUserSessions_(id);
+  });
 }
 function changeOwnPassword_(u,oldPassword,newPassword){
  if(!validPassword_(newPassword))throw new Error("weak_password");
@@ -387,18 +393,25 @@ function reassignAssignment_(u,req){
  });
 }
 function updateAssignment_(u,req){
- const x=assignmentById_(req.assignmentId);if(!x)throw new Error("user_not_found");const a=x.data;assertAssignmentAccess_(u,a,true);
- const sh=assignmentSheet_(),patch=req.patch||{},allowed=["Title","Description","Priority","DueAt"];
- allowed.forEach(k=>{if(Object.prototype.hasOwnProperty.call(patch,k)){if(k==="Title"&&!String(patch[k]).trim())throw new Error("invalid_title");a[k]=String(patch[k]).slice(0,k==="Description"?5000:180);}});
- a.UpdatedAt=new Date().toISOString();sh.getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>a[k])]);activity_(a.AssignmentID,u,"updated",patch);return assignmentPublic_(a);
+ return withScriptLock_(function(){
+  const x=assignmentById_(req.assignmentId);if(!x)throw new Error("user_not_found");const a=x.data;assertAssignmentAccess_(u,a,true);
+  const sh=assignmentSheet_(),patch=req.patch||{},allowed=["Title","Description","Priority","DueAt"];
+  allowed.forEach(k=>{if(Object.prototype.hasOwnProperty.call(patch,k)){if(k==="Title"&&!String(patch[k]).trim())throw new Error("invalid_title");if(k==="Priority"&&!["low","normal","high","urgent"].includes(String(patch[k])))throw new Error("invalid_priority");a[k]=String(patch[k]).slice(0,k==="Description"?5000:180);}});
+  a.UpdatedAt=new Date().toISOString();sh.getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>a[k])]);activity_(a.AssignmentID,u,"updated",patch);return assignmentPublic_(a);
+ });
 }
 function updateAssignmentStatus_(u,req){
- const x=assignmentById_(req.assignmentId);if(!x)throw new Error("user_not_found");const a=x.data;assertAssignmentAccess_(u,a,false);
- const status=String(req.status||"");if(!["new","viewed","in_progress","paused","completed","cancelled"].includes(status))throw new Error("invalid_status");
- a.Status=status;a.UpdatedAt=new Date().toISOString();if(!a.ViewedAt&&String(u.values[0])===String(a.AssigneeID)){a.ViewedAt=a.UpdatedAt;activity_(a.AssignmentID,u,"viewed",{});}
- assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>a[k])]);activity_(a.AssignmentID,u,"status_changed",{status:status});if(status==="completed"){notify_(a.OwnerLeaderID,a.AssignmentID,"completed","تم إغلاق المتابعة",a.Title+" — تم إغلاقها");}return assignmentPublic_(a);
+ return withScriptLock_(function(){
+  const x=assignmentById_(req.assignmentId);if(!x)throw new Error("user_not_found");const a=x.data;assertAssignmentAccess_(u,a,false);
+  const status=String(req.status||"");if(!["new","viewed","in_progress","paused","completed","cancelled"].includes(status))throw new Error("invalid_status");
+  if(a.Status===status)return assignmentPublic_(a);
+  a.Status=status;a.UpdatedAt=new Date().toISOString();if(!a.ViewedAt&&String(u.values[0])===String(a.AssigneeID)){a.ViewedAt=a.UpdatedAt;activity_(a.AssignmentID,u,"viewed",{});}
+  assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>a[k])]);activity_(a.AssignmentID,u,"status_changed",{status:status});
+  if(status==="completed")notify_(a.OwnerLeaderID,a.AssignmentID,"completed","تم إغلاق المتابعة",a.Title+" — تم إغلاقها");
+  return assignmentPublic_(a);
+ });
 }
-function archiveAssignment_(u,id,archive){const x=assignmentById_(id);if(!x)throw new Error("user_not_found");assertAssignmentAccess_(u,x.data,true);x.data.ArchivedAt=archive?new Date().toISOString():"";x.data.UpdatedAt=new Date().toISOString();assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>x.data[k])]);activity_(id,u,archive?"archived":"restored",{});return true;}
+function archiveAssignment_(u,id,archive){return withScriptLock_(function(){const x=assignmentById_(id);if(!x)throw new Error("user_not_found");assertAssignmentAccess_(u,x.data,true);x.data.ArchivedAt=archive?new Date().toISOString():"";x.data.UpdatedAt=new Date().toISOString();assignmentSheet_().getRange(x.row,1,1,UPGRADE_SHEETS.Assignments.length).setValues([UPGRADE_SHEETS.Assignments.map(k=>x.data[k])]);activity_(id,u,archive?"archived":"restored",{});return true;});}
 function requestReassignment_(u,req){
  return withScriptLock_(function(){
  const x=assignmentById_(req.assignmentId);if(!x)throw new Error("user_not_found");const a=x.data;assertAssignmentAccess_(u,a,false);
@@ -437,10 +450,11 @@ function reviewReassignment_(u,req){
  });
 }
 function addAssignmentNote_(u,req){
- const x=assignmentById_(req.assignmentId);if(!x)throw new Error("user_not_found");assertAssignmentAccess_(u,x.data,false);
- const visibility=req.visibility==="shared"?"shared":"private",body=String(req.body||"").trim();if(!body)throw new Error("invalid_note");
- if(visibility==="shared"&&!canManageAssignment_(u,x.data)&&String(u.values[0])!==String(x.data.AssigneeID))throw new Error("forbidden");
- const now=new Date().toISOString(),id=Utilities.getUuid();notesSheet_().appendRow([id,x.data.AssignmentID,String(u.values[0]),String(u.values[1]),visibility,body,now,now]);activity_(x.data.AssignmentID,u,"note_added",{visibility:visibility});return {id:id,visibility:visibility,body:body,createdAt:now};
+ return withScriptLock_(function(){
+  const x=assignmentById_(req.assignmentId);if(!x)throw new Error("user_not_found");assertAssignmentAccess_(u,x.data,false);
+  const visibility=req.visibility==="shared"?"shared":"private",body=String(req.body||"").trim();if(!body||body.length>5000)throw new Error("invalid_note");
+  const now=new Date().toISOString(),id=Utilities.getUuid();notesSheet_().appendRow([id,x.data.AssignmentID,String(u.values[0]),String(u.values[1]),visibility,body,now,now]);activity_(x.data.AssignmentID,u,"note_added",{visibility:visibility});return {id:id,visibility:visibility,body:body,createdAt:now};
+ });
 }
 function assignmentDetail_(u,id,includeHistory){
  const x=assignmentById_(id);if(!x)throw new Error("user_not_found");assertAssignmentAccess_(u,x.data,false);
