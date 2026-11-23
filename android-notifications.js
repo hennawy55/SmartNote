@@ -1,7 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { StatusBar, Style } from '@capacitor/status-bar';
-import { StatusBar, Style } from '@capacitor/status-bar';
 
 const isNative = Capacitor.isNativePlatform();
 let channelReady = false;
