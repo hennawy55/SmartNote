@@ -51,6 +51,43 @@
     'لا يوجد مستخدمون متاحون للإسناد إليهم':'No eligible users available'
   });
   Object.assign(translations,{'operation_in_progress':'هناك إجراء آخر قيد التنفيذ، انتظر حتى يكتمل.','جارٍ التنفيذ':'In progress — please wait.'});
+  Object.assign(translations,{
+    'too_many_attempts':'تم إيقاف محاولات تسجيل الدخول مؤقتاً. حاول مرة أخرى بعد 15 دقيقة.',
+    'cannot_delete_self':'لا يمكنك حذف حسابك الحالي.',
+    'هل تريد حذف هذا المستخدم؟ لا يمكن التراجع عن هذه العملية.':'Delete this user? This action cannot be undone.',
+    'تم حذف المستخدم بنجاح':'User deleted successfully.',
+    'حذف المستخدم':'Delete user',
+    'تعذر حفظ نسخة محلية:':'Could not save local copy:',
+    'تعذر جدولة تذكيرات الهاتف:':'Could not schedule phone reminders:',
+    'توسيع الشريط الجانبي':'Expand sidebar',
+    'طي الشريط الجانبي':'Collapse sidebar',
+    'معرّف السجل':'Record ID',
+    'يلزم تسجيل الدخول أولاً':'Please sign in first.',
+    'تم الحفظ محلياً وستتم المزامنة عند عودة الإنترنت':'Saved locally. Changes will sync when internet returns.',
+    'لم تصل استجابة صالحة من Google Apps Script؛ تحقق من نشر Web App':'No valid response from Google Apps Script. Check the Web App deployment.',
+    'تعذر تحديث البيانات:':'Could not refresh data:',
+    'تعذر الاتصال بالخادم:':'Could not connect to server:',
+    'تعذر تغيير كلمة المرور. سجل الدخول مرة أخرى.':'Could not change password. Please sign in again.',
+    'تم تغيير كلمة المرور وإغلاق الجلسات السابقة':'Password reset. Previous sessions have been revoked.',
+    'تم تحديث حالة الحساب':'Account status updated.',
+    'تم تحديث صلاحية المستخدم':'User role updated.',
+    'لا يمكن تغيير صلاحيتك من هذه الشاشة':'You cannot change your own role here.',
+    'إدارة المستخدمين':'User management',
+    'إضافة مستخدم جديد':'Add new user',
+    'إنشاء الحساب':'Create account',
+    'الحسابات المسجلة':'Registered accounts',
+    'مدير النظام':'Administrator',
+    'موزع':'Leader',
+    'مستخدم':'User',
+    'نشط':'Active',
+    'معطل':'Disabled',
+    'تعطيل الحساب':'Disable account',
+    'تفعيل الحساب':'Enable account',
+    'حفظ الصلاحية':'Save role',
+    'كلمة مرور جديدة (10 أحرف على الأقل)':'New password (at least 10 characters)',
+    'تغييرات الصلاحيات وكلمات المرور تُطبق فوراً.':'Role and password changes take effect immediately.',
+    'تم':'Done'
+  });
   const originals = new WeakMap();
   const attributeOriginals = new WeakMap();
   let language = 'ar';
