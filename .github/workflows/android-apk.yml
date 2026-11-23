@@ -54,18 +54,36 @@ jobs:
           cat > "$MAIN_ACTIVITY" <<'JAVA'
           package com.hennawy55.smartnote;
 
+          import android.graphics.Color;
           import android.os.Bundle;
+          import android.view.View;
           import android.view.WindowManager;
           import androidx.core.view.WindowCompat;
+          import androidx.core.view.WindowInsetsCompat;
+          import androidx.core.view.WindowInsetsControllerCompat;
           import com.getcapacitor.BridgeActivity;
 
           public class MainActivity extends BridgeActivity {
             @Override
             public void onCreate(Bundle savedInstanceState) {
               super.onCreate(savedInstanceState);
+
+              // Keep Android status and navigation bars visible (non-immersive app).
               getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+              getWindow().addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
               WindowCompat.setDecorFitsSystemWindows(getWindow(), true);
-              getWindow().getDecorView().setSystemUiVisibility(0);
+              getWindow().setStatusBarColor(Color.rgb(250, 247, 244));
+              getWindow().setNavigationBarColor(Color.rgb(250, 247, 244));
+              getWindow().setNavigationBarDividerColor(Color.rgb(225, 218, 213));
+
+              View decor = getWindow().getDecorView();
+              decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+              WindowInsetsControllerCompat controller =
+                  WindowCompat.getInsetsController(getWindow(), decor);
+              controller.setSystemBarsBehavior(
+                  WindowInsetsControllerCompat.BEHAVIOR_DEFAULT);
+              controller.show(WindowInsetsCompat.Type.statusBars()
+                  | WindowInsetsCompat.Type.navigationBars());
             }
           }
           JAVA
