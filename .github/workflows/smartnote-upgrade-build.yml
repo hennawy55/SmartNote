@@ -37,7 +37,10 @@ jobs:
       - name: Install dependencies
         run: npm install
       - name: Validate application JavaScript
-        run: node --check app.js && node --check language.js && node --check theme.js
+        run: |
+          node --check app.js
+          node --check language.js
+          node --check theme.js
       - name: Prepare Android web assets
         run: npm run prepare:android
       - name: Prepare web package
