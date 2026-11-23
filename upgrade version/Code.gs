@@ -39,11 +39,11 @@ function doPost(e) {
     });
     if (action === "admin_list") return withAdmin_(req.token, function () { return { ok: true, users: listUsers_() }; });
     if (action === "admin_audit_list") return withAdmin_(req.token, function () { return {ok:true,entries:listAudit_()}; });
-    if (action === "admin_create") return withAdmin_(req.token, function () { return { ok: true, user: createUser_(req) }; });
-    if (action === "admin_status") return withAdmin_(req.token, function () { return { ok: true, updated: setUserStatus_(req.userId, req.status) }; });
-    if (action === "admin_role") return withAdmin_(req.token, function (admin) { return { ok: true, updated: setUserRole_(req.userId, req.role, admin.values[0]) }; });
-    if (action === "admin_reset_password") return withAdmin_(req.token, function () { resetPassword_(req.userId, req.password); return { ok: true }; });
-    if (action === "admin_delete") return withAdmin_(req.token, function (admin) { if(String(req.userId)===String(admin.values[0]))throw new Error("cannot_delete_self"); deleteUser_(req.userId); return { ok: true }; });
+    if (action === "admin_create") return withAdmin_(req.token, function (admin) { return { ok: true, user: createUser_(req,admin) }; });
+    if (action === "admin_status") return withAdmin_(req.token, function (admin) { return { ok: true, updated: setUserStatus_(req.userId, req.status,admin) }; });
+    if (action === "admin_role") return withAdmin_(req.token, function (admin) { return { ok: true, updated: setUserRole_(req.userId, req.role, admin) }; });
+    if (action === "admin_reset_password") return withAdmin_(req.token, function (admin) { resetPassword_(req.userId, req.password,admin); return { ok: true }; });
+    if (action === "admin_delete") return withAdmin_(req.token, function (admin) { if(String(req.userId)===String(admin.values[0]))throw new Error("cannot_delete_self"); deleteUser_(req.userId,admin); return { ok: true }; });
     if (action === "assignment_list") return withSession_(req.token, function (user) { return { ok: true, assignments: listAssignments_(user) }; });
     if (action === "assignment_create") return withSession_(req.token, function (user) { return { ok: true, assignment: createAssignment_(user, req) }; });
     if (action === "assignment_reassign") return withSession_(req.token, function (user) { return { ok: true, assignment: reassignAssignment_(user, req) }; });
@@ -314,27 +314,26 @@ function listUsers_() {
   const rows=sh.getRange(2,1,last-1,8).getValues();
   return rows.map((r,i)=>({id:String(r[0]),username:String(r[1]),role:String(r[4]),status:String(r[5]),updatedAt:String(r[6]),row:i+2}));
 }
-function createUser_(req) {
+function createUser_(req,actor) {
   return withScriptLock_(function(){
-    const username=cleanUsername_(req.username);
-    if(!validPassword_(req.password))throw new Error("weak_password");
-    if(findUser_(username))throw new Error("username_exists");
-    const created=insertUser_(username,req.password,["admin","leader","user"].includes(req.role)?req.role:"user");audit_(null,"user_created",String(created.values[0]),{username:username,role:String(created.values[4])},"success");return publicUser_(created);
+    const username=cleanUsername_(req.username);if(!validPassword_(req.password))throw new Error("weak_password");if(findUser_(username))throw new Error("username_exists");
+    const created=insertUser_(username,req.password,["admin","leader","user"].includes(req.role)?req.role:"user");
+    audit_(actor,"user_created",String(created.values[0]),{username:username,role:String(created.values[4])},"success");return publicUser_(created);
   });
 }
-function setUserStatus_(id,status) {
+function setUserStatus_(id,status,actor) {
   return withScriptLock_(function(){
     if(!["active","disabled"].includes(status))throw new Error("invalid_status");
     const u=findUserById_(String(id));if(!u)throw new Error("user_not_found");
-    users_().getRange(u.row,6).setValue(status);if(status!=="active")revokeUserSessions_(id);audit_(null,"user_status_changed",id,{status:status},"success");return true;
+    users_().getRange(u.row,6).setValue(status);if(status!=="active")revokeUserSessions_(id);audit_(actor,"user_status_changed",id,{status:status},"success");return true;
   });
 }
-function resetPassword_(id,password) {
+function resetPassword_(id,password,actor) {
   return withScriptLock_(function(){
     if(!validPassword_(password))throw new Error("weak_password");
     const u=findUserById_(String(id));if(!u)throw new Error("user_not_found");
     const salt=randomHex_(16),sh=users_();sh.getRange(u.row,3,1,2).setValues([[hashPassword_(password,salt),salt]]);
-    sh.getRange(u.row,8).setValue(true);revokeUserSessions_(id);audit_(null,"password_reset",id,{mustChangePassword:true},"success");
+    sh.getRange(u.row,8).setValue(true);revokeUserSessions_(id);audit_(actor,"password_reset",id,{mustChangePassword:true},"success");
   });
 }
 function changeOwnPassword_(u,oldPassword,newPassword){
@@ -348,14 +347,14 @@ function revokeUserSessions_(id) {
   const sh = sessions_(), rows = sh.getDataRange().getValues();
   for (let i = rows.length - 1; i >= 1; i--) if (String(rows[i][1]) === String(id)) { clearSessionCache_(String(rows[i][0])); sh.deleteRow(i + 1); }
 }
-function deleteUser_(id) {
+function deleteUser_(id,actor) {
   return withScriptLock_(function(){
     const u=findUserById_(String(id));if(!u)throw new Error("user_not_found");
     const active=assignmentRows_().filter(x=>!String(x.data.ArchivedAt||"")&&(String(x.data.AssigneeID)===String(id)||String(x.data.OwnerLeaderID)===String(id)));
     if(active.length)throw new Error("user_has_active_assignments");
     const pending=requestSheet_().getDataRange().getValues().slice(1).some(r=>(String(r[2])===String(id)||String(r[4])===String(id))&&String(r[7])==="pending");
     if(pending)throw new Error("user_has_pending_requests");
-    users_().deleteRow(u.row);revokeUserSessions_(id);audit_(null,"user_deleted",id,{},"success");return true;
+    users_().deleteRow(u.row);revokeUserSessions_(id);audit_(actor,"user_deleted",id,{},"success");return true;
   });
 }
 function assignmentSheet_(){const sh=sheet_("Assignments",UPGRADE_SHEETS.Assignments),headers=sh.getLastRow()?sh.getRange(1,1,1,Math.max(1,sh.getLastColumn())).getDisplayValues()[0]:[];UPGRADE_SHEETS.Assignments.forEach((name,i)=>{if(!headers[i])sh.getRange(1,i+1).setValue(name);else if(headers[i]!==name)throw new Error("schema_mismatch_Assignments");});sh.getRange(1,1,1,UPGRADE_SHEETS.Assignments.length).setFontWeight("bold");return sh;}
@@ -496,12 +495,12 @@ function markNotificationRead_(u,id){
  const row=match.getRow();if(String(sh.getRange(row,2).getValue())!==String(u.values[0]))throw new Error("user_not_found");
  sh.getRange(row,7).setValue(true);sh.getRange(row,9).setValue(new Date().toISOString());return true;
 }
-function setUserRole_(id,role,adminId){
+function setUserRole_(id,role,admin) {
  return withScriptLock_(function(){
   if(!["admin","leader","user"].includes(role))throw new Error("invalid_role");
-  const u=findUserById_(String(id));if(!u)throw new Error("user_not_found");if(String(id)===String(adminId))throw new Error("cannot_change_own_role");
+  const u=findUserById_(String(id));if(!u)throw new Error("user_not_found");if(String(id)===String(admin.values[0]))throw new Error("cannot_change_own_role");
   const manages=assignmentRows_().some(x=>!String(x.data.ArchivedAt||"")&&String(x.data.OwnerLeaderID)===String(id));
   if(role==="user"&&manages)throw new Error("user_manages_active_assignments");
-  users_().getRange(u.row,5).setValue(role);revokeUserSessions_(id);audit_(null,"user_role_changed",id,{role:role},"success");return true;
+  users_().getRange(u.row,5).setValue(role);revokeUserSessions_(id);audit_(admin,"user_role_changed",id,{role:role},"success");return true;
  });
 }
