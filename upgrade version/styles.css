@@ -342,3 +342,80 @@ html[dir="ltr"] .admin-password-row{direction:ltr}
 .task-alert.is-unread{border-inline-start:3px solid var(--blue);background:var(--panel2)}
 .task-alert.is-read{opacity:.82}
 @media(max-width:700px){.assignment-detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.assignment-note-form{grid-template-columns:1fr}.assigned-card .card-actions{display:grid;grid-template-columns:1fr 1fr}.assigned-card .card-actions button:first-child{grid-column:1/-1}.assigned-status-select{max-width:none;width:100%}.mobile-nav{grid-template-columns:repeat(8,minmax(0,1fr))}.mobile-nav button{font-size:7px}.mobile-nav button span:first-child{font-size:17px}}
+
+/* Assigned follow-ups responsive layout and modal-first workflow */
+#quickAdd[hidden]{display:none!important}
+#view-assigned,.assigned-groups,.assigned-filters,.task-groups,.task-group-content,.task-group-content .cards{min-width:0;max-width:100%}
+#view-assigned{width:100%;overflow-x:clip}
+#view-assigned .section-head{align-items:center;flex-wrap:wrap}
+#view-assigned .section-head>div{min-width:0;flex:1 1 220px}
+#view-assigned .section-head>.btn{flex:0 0 auto;white-space:nowrap}
+#view-assigned .task-filters{grid-template-columns:minmax(0,2fr) repeat(2,minmax(0,1fr));gap:12px}
+#view-assigned .task-filter-field{min-width:0}
+#view-assigned .task-filter-field .filter-input{width:100%;min-width:0;max-width:100%}
+#view-assigned .task-group-content .cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+#view-assigned .assigned-card{width:100%;min-width:0;max-width:100%;align-content:start}
+#view-assigned .assigned-card-head{min-width:0}
+#view-assigned .assigned-card-head>div{min-width:0}
+#view-assigned .assigned-meta{display:flex;gap:7px 14px;flex-wrap:wrap}
+#view-assigned .card-actions{display:flex;justify-content:flex-start}
+#view-assigned .card-actions .btn{flex:0 1 auto;min-width:150px}
+.assignment-popup{z-index:120;overflow-y:auto;align-items:center}
+.assignment-modal{width:min(620px,100%);max-height:min(88dvh,850px);padding:clamp(16px,3vw,24px);background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:20px}
+.assignment-modal .modal-head{position:sticky;top:-1px;z-index:2;padding:4px 0 12px;margin:0 0 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+.assignment-modal-content,.assignment-detail-body{min-width:0}
+.assignment-detail-body{display:grid;gap:15px}
+.assignment-detail-summary h3{margin:0 0 7px;font-size:17px}
+.assignment-detail-summary p{margin:0;color:var(--muted);font-size:12px;line-height:1.8;overflow-wrap:anywhere}
+.assignment-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.assignment-detail-grid>div{min-width:0;display:grid;gap:6px;padding:11px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)}
+.assignment-detail-grid small{font-size:10px;color:var(--muted)}
+.assignment-detail-grid b{font-size:12px;overflow-wrap:anywhere}
+.assignment-detail-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.assignment-detail-actions>.btn{min-height:42px;white-space:normal}
+.assignment-status-control{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px}
+.assignment-status-control>span{grid-column:1/-1;color:var(--muted);font-size:11px}
+.assignment-status-control select{width:100%;min-width:0;height:42px}
+.assignment-status-control button{height:42px}
+.assignment-notes-section,.assignment-pending-requests{display:grid;gap:9px}
+.assignment-notes-section>h3,.assignment-pending-requests>h3{margin:0;font-size:13px}
+.assignment-note{padding:11px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)}
+.assignment-note header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.assignment-note p{margin:8px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.7}
+.assignment-note-form,.assignment-transfer-form{display:grid;gap:10px;padding:13px;border:1px solid var(--line);border-radius:13px;background:var(--panel2)}
+.assignment-note-form label,.assignment-transfer-form label{display:grid;gap:6px;min-width:0;font-size:11px;color:var(--muted)}
+.assignment-note-form textarea,.assignment-note-form select,.assignment-transfer-form textarea,.assignment-transfer-form select{width:100%;min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text);padding:10px;font:inherit}
+.assignment-note-form textarea,.assignment-transfer-form textarea{min-height:78px;resize:vertical}
+.assignment-note-form button{justify-self:start}
+.assignment-history{display:grid;gap:8px}
+.assignment-history-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;padding:11px;border:1px solid var(--line);border-radius:11px;background:var(--panel2)}
+.assignment-history-item b{font-size:12px}
+.assignment-history-item span{font-size:11px;color:var(--text)}
+.assignment-history-item small{grid-column:1/-1;color:var(--muted);font-size:10px}
+.assignment-request{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:7px;padding:10px;border:1px solid var(--line);border-radius:11px}
+.assignment-request p{margin:5px 0 0;color:var(--muted);font-size:11px}
+@media(max-width:700px){
+  .main{padding-inline:12px;min-width:0}
+  .topbar{min-width:0;flex-wrap:wrap;align-items:flex-start}
+  .page-title{min-width:0;max-width:100%}
+  .top-actions{min-width:0;max-width:100%;flex-wrap:wrap}
+  #view-assigned .task-filters{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  #view-assigned .task-filters .task-search-field{grid-column:1/-1}
+  #view-assigned .task-group-content .cards{grid-template-columns:minmax(0,1fr)}
+  #view-assigned .section-head{align-items:flex-start}
+  #view-assigned .section-head>.btn{min-height:42px}
+  #view-assigned .assigned-card{padding:14px}
+  #view-assigned .card-actions .btn{width:100%;min-width:0}
+  .assignment-popup{padding:10px;align-items:center}
+  .assignment-modal{width:100%;max-height:88dvh;border-radius:17px;padding:15px}
+  .assignment-detail-actions{grid-template-columns:1fr}
+  .assignment-status-control{grid-template-columns:minmax(0,1fr)}
+  .assignment-status-control>span{grid-column:auto}
+  .assignment-status-control button{width:100%}
+  .assignment-request{grid-template-columns:1fr 1fr}
+  .assignment-request>div{grid-column:1/-1}
+}
+@media(min-width:701px) and (max-width:1050px){
+  #view-assigned .task-filters{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #view-assigned .task-group-content .cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
