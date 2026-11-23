@@ -309,14 +309,14 @@ function assignmentRows_(){const sh=assignmentSheet_(),v=sh.getDataRange().getVa
 function assignmentById_(id){const x=assignmentRows_().find(x=>String(x.data.AssignmentID)===String(id));return x||null;}
 function isAdmin_(u){return String(u.values[4])==="admin";}
 function isLeader_(u){return String(u.values[4])==="leader";}
-function canManageAssignment_(u,a){return isAdmin_(u)||String(a.CreatedBy)===String(u.values[0])||String(a.OwnerLeaderID)===String(u.values[0]);}
+function canManageAssignment_(u,a){return isAdmin_(u)||String(a.OwnerLeaderID)===String(u.values[0]);}
 function canSeeAssignment_(u,a){return canManageAssignment_(u,a)||String(a.AssigneeID)===String(u.values[0]);}
 function assertAssignmentAccess_(u,a,manage){if(!a||(!canSeeAssignment_(u,a))||(manage&&!canManageAssignment_(u,a)))throw new Error("forbidden");}
 function activity_(id,u,action,details){activitySheet_().appendRow([Utilities.getUuid(),id,String(u.values[0]),String(u.values[1]),action,JSON.stringify(details||{}),new Date().toISOString()]);}
 function notify_(userId,assignmentId,type,title,body){if(!userId)return;notificationSheet_().appendRow([Utilities.getUuid(),userId,assignmentId||"",type,title,body,false,new Date().toISOString(),""]);}
 function assignmentPublic_(a){return {id:String(a.AssignmentID),title:String(a.Title||""),description:String(a.Description||""),status:String(a.Status||"new"),priority:String(a.Priority||"normal"),dueAt:String(a.DueAt||""),createdAt:String(a.CreatedAt||""),assignedAt:String(a.AssignedAt||""),updatedAt:String(a.UpdatedAt||""),createdBy:String(a.CreatedBy||""),createdByName:String(a.CreatedByName||""),ownerLeaderId:String(a.OwnerLeaderID||""),ownerLeaderName:String(a.OwnerLeaderName||""),assigneeId:String(a.AssigneeID||""),assigneeName:String(a.AssigneeName||""),archivedAt:String(a.ArchivedAt||""),viewedAt:String(a.ViewedAt||"")};}
 function listAssignments_(u){return assignmentRows_().filter(x=>canSeeAssignment_(u,x.data)).map(x=>assignmentPublic_(x.data));}
-function listAssignableUsers_(u){if(!isAdmin_(u)&&!isLeader_(u))throw new Error("forbidden");return listUsers_().filter(x=>x.status==="active").map(x=>({id:x.id,username:x.username,role:x.role}));}
+function listAssignableUsers_(u){return listUsers_().filter(x=>x.status==="active"&&x.id!==String(u.values[0])).map(x=>({id:x.id,username:x.username,role:x.role}));}
 function createAssignment_(u,req){
  if(!isAdmin_(u)&&!isLeader_(u))throw new Error("forbidden");
  const title=String(req.title||"").trim();if(!title||title.length>180)throw new Error("invalid_title");
