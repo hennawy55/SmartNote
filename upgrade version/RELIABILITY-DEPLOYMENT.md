@@ -10,7 +10,7 @@ All upgrade code lives in this folder. The original application outside this fol
 4. Save and deploy a new Web App version using the same deployment identity/access policy as the existing working deployment. Updating GitHub alone does not update Apps Script.
 5. Run setupSmartNoteUpgrade once from the Apps Script editor. It creates any missing upgrade sheets, including AuditLog, and checks the user schema. It does not intentionally clear existing user databases.
 6. If this is a brand-new database, run getInitialAdminCredentials once from the Apps Script editor and retrieve the generated one-time admin password from the execution log. Change it at first sign-in. Existing databases are not assigned a new password.
-6. Confirm the deployed Web App URL matches API_URL in app.js. Do not paste deployment secrets into chat or commit them to GitHub.
+7. Confirm the deployed Web App URL matches API_URL in app.js. Do not paste deployment secrets into chat or commit them to GitHub.
 
 ## Reliability changes included
 
