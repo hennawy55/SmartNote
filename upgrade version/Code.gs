@@ -67,7 +67,7 @@ function json_(obj) {
 }
 function safeError_(err) {
   const msg = String(err && err.message || "server_error");
-  return /^(invalid_|request_pending$|request_not_pending$|cannot_change_own_role$|unauthorized$|forbidden$|inactive_user$|username_exists$|bootstrap_disabled$|bootstrap_already_used$|weak_password$|user_not_found$|cannot_disable_self$|cannot_delete_self$|database_too_large$|database_not_configured$|server_error$)/.test(msg) ? msg : "server_error";
+  return /^(invalid_|same_assignee$|request_pending$|request_not_pending$|cannot_change_own_role$|unauthorized$|forbidden$|inactive_user$|username_exists$|bootstrap_disabled$|bootstrap_already_used$|weak_password$|user_not_found$|cannot_disable_self$|cannot_delete_self$|database_too_large$|database_not_configured$|server_error$)/.test(msg) ? msg : "server_error";
 }
 function book_() {
   const id = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID");
