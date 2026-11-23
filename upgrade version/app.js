@@ -10,7 +10,7 @@
   const QUICK_ACTIONS={workspaces:['workspace','مساحة جديدة'],projects:['project','مشروع جديد'],units:['unit','وحدة جديدة'],notes:['note','ملاحظة جديدة'],clients:['client','عميل جديد'],tasks:['task','متابعة جديدة']};
   const emptyDB=()=>({version:1,workspaces:[],projects:[],units:[],notes:[],clients:[],tasks:[]});
   let db=emptyDB(), editing=null, isReady=false, saveQueue=Promise.resolve(), syncInFlight=false, writesInProgress=0, localRevision=0;
-  let assignedItems=[],assignmentPeople=[],serverNotifications=[],serverNotificationCursor='',serverNotificationHasMore=false;
+  let assignedItems=[],assignmentPeople=[],serverNotifications=[],serverNotificationCursor='',serverNotificationHasMore=false,serverNotificationUnreadCount=0;
   const localDataKey=()=>`smartnote-local-db-v1:${encodeURIComponent(currentUser?.username||'')}`;
   const pendingSyncKey=()=>`smartnote-pending-sync-v1:${encodeURIComponent(currentUser?.username||'')}`;
   function cacheLocalDatabase(state=db,pending=false){if(!currentUser?.username)return;try{localStorage.setItem(localDataKey(),JSON.stringify(cloudPayload(state)));if(pending)localStorage.setItem(pendingSyncKey(),'1')}catch(error){toast('تعذر حفظ نسخة محلية: '+error.message)}}
@@ -374,13 +374,13 @@
     try{
       const result=await apiPost({action:'notification_list',cursor:loadOlder?serverNotificationCursor:''});
       serverNotifications=loadOlder?serverNotifications.concat(result.notifications||[]):(result.notifications||[]);
-      serverNotificationCursor=result.nextCursor||'';serverNotificationHasMore=!!result.hasMore;
+      serverNotificationCursor=result.nextCursor||'';serverNotificationHasMore=!!result.hasMore;if(!loadOlder)serverNotificationUnreadCount=Number(result.unreadCount||0);
     }catch(error){if(!loadOlder)serverNotifications=[];toast(t('تعذر تحميل الإشعارات: ','Could not load notifications: ')+error.message)}
     renderUnifiedNotifications();
   }
   function renderUnifiedNotifications(){
     const t=assignmentText,all=[...taskAlerts.map(a=>({id:'local:'+a.key,kind:'local',title:a.title,body:a.body,createdAt:a.createdAt,isRead:!!a.isRead,taskId:a.taskId,key:a.key})),...serverNotifications.map(n=>({...n,kind:'server'}))].sort((a,b)=>(Date.parse(b.createdAt)||Number(b.createdAt)||0)-(Date.parse(a.createdAt)||Number(a.createdAt)||0));
-    const unread=all.filter(n=>!n.isRead).length,list=document.getElementById('taskAlerts'),more=document.getElementById('notificationLoadMore');
+    const unread=taskAlerts.filter(n=>!n.isRead).length+serverNotificationUnreadCount,list=document.getElementById('taskAlerts'),more=document.getElementById('notificationLoadMore');
     document.getElementById('notificationCount').textContent=unread;document.getElementById('notificationCount').hidden=!unread;document.getElementById('notificationPanelCount').textContent='('+all.length+')';document.getElementById('notificationBell').setAttribute('aria-label',t('الإشعارات: ','Notifications: ')+unread);
     if(more){more.hidden=!serverNotificationHasMore;more.disabled=false;more.textContent=t('تحميل إشعارات أقدم','Load older notifications')}
     list.innerHTML=all.length?all.map(n=>'<article class="task-alert '+(n.isRead?'is-read':'is-unread')+'"><div class="unified-notice-head"><h3>'+esc(n.title)+'</h3>'+(n.isRead?'':'<span class="unread-dot"></span>')+'</div><p>'+esc(n.body)+'</p><small>'+assignmentDate(n.createdAt)+'</small><div class="task-alert-actions"><button class="btn primary" data-unified-open="'+esc(n.id)+'" data-kind="'+n.kind+'" data-assignment="'+esc(n.assignmentId||'')+'" data-task="'+esc(n.taskId||'')+'">'+t('عرض','Open')+'</button></div></article>').join(''):'<div class="notification-empty">'+t('لا توجد إشعارات حالياً','No notifications yet')+'</div>';
@@ -393,7 +393,7 @@
         if(alert){alert.isRead=true;closeBrowserNotification(alert.key);persistTaskAlertState();showView('tasks');openForm('task',alert.taskId)}
       }else{
         await apiPost({action:'notification_read',notificationId:b.dataset.unifiedOpen});
-        const item=serverNotifications.find(x=>x.id===b.dataset.unifiedOpen);if(item)item.isRead=true;
+        const item=serverNotifications.find(x=>x.id===b.dataset.unifiedOpen);if(item&&!item.isRead){item.isRead=true;serverNotificationUnreadCount=Math.max(0,serverNotificationUnreadCount-1);}
         if(b.dataset.assignment){showView('assigned');await openAssignedDetail(b.dataset.assignment)}
       }
       renderUnifiedNotifications();
