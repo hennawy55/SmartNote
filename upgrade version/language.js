@@ -56,6 +56,8 @@
     'user_has_active_assignments':'Reassign this account’s active follow-ups before disabling or deleting it.','user_has_pending_requests':'Resolve this account’s pending reassignment requests before disabling or deleting it.','user_manages_active_assignments':'Transfer this account’s active follow-up ownership before changing its role to User.','same_assignee':'Choose a different assignee.',
     'cannot_delete_self':'You cannot delete your own account.',
     'unauthorized':'Invalid username or password, or your session has expired.',
+    'login_failed':'Failed sign-in attempt','login_success':'Successful sign-in','user_status_changed':'Account status changed','user_role_changed':'Account role changed','password_reset':'Password reset','user_deleted':'Account deleted','user_created':'Account created','password_changed':'Password changed',
+
     'forbidden':'You do not have permission to perform this action.',
     'inactive_user':'This account is disabled.',
     'username_exists':'This username is already in use.',
@@ -114,6 +116,7 @@
   function translate(value){
     const leading=value.match(/^\s*/)?.[0]||'',trailing=value.match(/\s*$/)?.[0]||'',core=value.slice(leading.length,value.length-trailing.length);
     if(translations[core])return leading+translations[core]+trailing;
+    if(core.startsWith('invalid_'))return leading+'Invalid input. Please check the entered information.'+trailing;
     const required=core.endsWith(' *'),base=required?core.slice(0,-2):core;
     if(required&&translations[base])return leading+translations[base]+' *'+trailing;
     const plus=core.match(/^[＋+]\s*(.+)$/);if(plus&&translations[plus[1]])return `${leading}+ ${translations[plus[1]]}${trailing}`;
