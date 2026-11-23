@@ -1,8 +1,9 @@
 (() => {
   'use strict';
   const API_URL='https://script.google.com/macros/s/AKfycbydl03bhdi5zvrlkcFmJsek59LMmGYWU6Dbfvh7BFVPUuOwn7UGnCRF53m3Ucz6OaYViA/exec';
-  const API_TOKEN='hanna';
-  const DATABASE_NAME='SMART_REAL_ESTATE_NOTEBOOK_V1';
+  const SESSION_KEY='smartnote-auth-session-v2';
+  const DATABASE_NAME='SMARTNOTE_USER_DATABASE_V2';
+  let authToken='', currentUser=null;
   const TYPES=['workspaces','projects','units','notes','clients','tasks'];
   const LABELS={workspaces:'مساحة عمل',projects:'مشروع',units:'وحدة',notes:'ملاحظة',clients:'عميل',tasks:'متابعة'};
   const TITLES={dashboard:['الرئيسية','ملخص سريع لكل بياناتك العقارية'],workspaces:['مساحات العمل','نظم بياناتك في مجموعات مستقلة'],projects:['المشاريع','قاعدة موحدة لكل المشروعات'],units:['الوحدات','تفاصيل الوحدات وأسعارها'],notes:['الملاحظات الذكية','كل المعلومات التي سجلتها'],clients:['العملاء','بيانات العملاء واحتياجاتهم'] ,tasks:['المتابعات','المهام والمواعيد القادمة']};
@@ -172,65 +173,77 @@
   document.getElementById('quickAdd').onclick=event=>{const type=event.currentTarget.dataset.quickAddType;if(type)openForm(type);else document.getElementById('quickAddBackdrop').classList.add('show')};document.getElementById('quickAddClose').onclick=()=>document.getElementById('quickAddBackdrop').classList.remove('show');document.getElementById('quickAddBackdrop').addEventListener('click',event=>{if(event.target.id==='quickAddBackdrop')event.currentTarget.classList.remove('show');const button=event.target.closest('[data-quick-type]');if(button){event.currentTarget.classList.remove('show');openForm(button.dataset.quickType)}});
   document.getElementById('globalSearch').addEventListener('keydown',e=>{if(e.key==='Enter')searchAll(e.target.value)});
   function searchAll(q){q=q.trim().toLowerCase();if(!q)return;const results=[];for(const type of TYPES)for(const x of db[type])if(JSON.stringify(x).toLowerCase().includes(q))results.push({type,item:x});document.getElementById('searchCaption').textContent=`${results.length} نتيجة عن: ${q}`;document.getElementById('searchList').innerHTML=results.length?results.map(({type,item})=>`<article class="entity-card"><div class="entity-meta"><span class="pill">${LABELS[type]}</span></div><h3 class="spaced-title">${esc(item.name||item.title||'بدون عنوان')}</h3><p>${esc(item.content||item.description||item.location||item.phone||'')}</p><div class="card-actions"><button class="btn small" data-record-view="${type}" data-id="${esc(item.id)}"><i data-lucide="eye"></i> عرض</button><button class="btn small" data-view="${type}">فتح القسم</button></div></article>`).join(''):emptyHTML('لا توجد نتائج','جرّب كلمات بحث أخرى.');document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));document.getElementById('searchResults').classList.add('active');document.getElementById('pageHeading').textContent='نتائج البحث';document.getElementById('pageSub').textContent='بحث شامل في قاعدة بياناتك';updateQuickAdd('');if(window.lucide)window.lucide.createIcons({attrs:{'stroke-width':1.8}})}
-  async function apiGet(params){
-    return new Promise((resolve,reject)=>{
-      const cb='sren_cb_'+Math.random().toString(36).slice(2),script=document.createElement('script');
-      const timer=setTimeout(()=>{cleanup();reject(new Error('انتهت مهلة الاتصال بالخادم'))},20000);
-      function cleanup(){clearTimeout(timer);delete window[cb];script.remove()}
-      window[cb]=data=>{cleanup();if(data?.error&&data.error!=='not_found')reject(new Error(data.error));else resolve(data)};
-      script.onerror=()=>{cleanup();reject(new Error('تعذر الوصول إلى Google Apps Script'))};
-      const u=new URL(API_URL);Object.entries({...params,token:API_TOKEN,callback:cb}).forEach(([k,v])=>u.searchParams.set(k,v));script.src=u.toString();document.body.appendChild(script);
-    });
-  }
   async function apiPost(payload){
-    const response=await fetch(API_URL,{method:'POST',redirect:'follow',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({...payload,token:API_TOKEN})});
-    const raw=await response.text();let result;try{result=JSON.parse(raw)}catch{throw new Error('لم تصل استجابة صالحة من Google Apps Script؛ راجع نشر Web App')}
+    const response=await fetch(API_URL,{method:'POST',redirect:'follow',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({...payload,token:authToken})});
+    const raw=await response.text();let result;try{result=JSON.parse(raw)}catch{throw new Error('لم تصل استجابة صالحة من Google Apps Script؛ تحقق من نشر Web App')}
     if(result.error)throw new Error(result.error);if(result.ok===false)throw new Error('تعذر تنفيذ العملية');return result;
   }
   function cloudPayload(state){return {...state,spaces:state.workspaces||[]}}
   async function saveDatabase(nextState){
     const snapshot=cloudPayload(nextState);
-    const serialized=JSON.stringify(snapshot);if(serialized.length>44000)throw new Error('حجم البيانات اقترب من الحد المسموح في Google Sheets؛ يلزم تقسيم التخزين قبل إضافة المزيد');
     writesInProgress++;
-    saveQueue=saveQueue.catch(()=>{}).then(()=>apiPost({action:'save',name:DATABASE_NAME,data:snapshot}));
+    saveQueue=saveQueue.catch(()=>{}).then(()=>apiPost({action:'save',data:snapshot}));
     try{return await saveQueue}finally{writesInProgress--}
   }
   function normalizeDatabase(data){const d=data&&typeof data==='object'?data:{};return {...emptyDB(),...d,workspaces:Array.isArray(d.workspaces)?d.workspaces:(Array.isArray(d.spaces)?d.spaces:[]),tasks:Array.isArray(d.tasks)?d.tasks.map(task=>task.status==='قيد التنفيذ'&&!task.startedAt?{...task,startedAt:task.updatedAt||task.createdAt||null}:task):[]};}
   async function syncCloud(){
-    if(!isReady||!navigator.onLine||document.hidden||editing||writesInProgress||syncInFlight)return;
-    syncInFlight=true;
-    const revision=localRevision;
+    if(!isReady||!authToken||!navigator.onLine||document.hidden||editing||writesInProgress||syncInFlight)return;
+    syncInFlight=true;const revision=localRevision;
     try{
-      const result=await apiGet({action:'load',name:DATABASE_NAME});
-      if(!result.data)throw new Error(result.error||'لم يتم العثور على بيانات قاعدة البيانات');
-      const remote=normalizeDatabase(result.data);
+      const result=await apiPost({action:'load'});
+      const remote=normalizeDatabase(result.data||{});
       if(revision!==localRevision||editing||writesInProgress)return;
       const dismissed=new Set([...(db.taskNotificationDismissals||[]),...(remote.taskNotificationDismissals||[])]);remote.taskNotificationDismissals=[...dismissed];
       if(JSON.stringify(cloudPayload(remote))!==JSON.stringify(cloudPayload(db))){db=remote;renderAll();syncNativeTaskReminders()}
       const removed=taskAlerts.filter(alert=>dismissed.has(alert.key));if(removed.length){removed.forEach(alert=>closeBrowserNotification(alert.key));for(let i=taskAlerts.length-1;i>=0;i--)if(dismissed.has(taskAlerts[i].key))taskAlerts.splice(i,1);persistTaskAlertState();renderTaskAlerts()}
       setConnection(true,'مزامنة تلقائية كل 5 ثوانٍ.');
-    }catch(err){
-      setConnection(true,'تعذر تحديث البيانات تلقائياً: '+err.message);
-    }finally{syncInFlight=false}
+    }catch(err){setConnection(false,'تعذر تحديث البيانات: '+err.message)}
+    finally{syncInFlight=false}
+  }
+  function showLogin(message=''){
+    isReady=false;document.getElementById('onlineGate').style.display='none';
+    let gate=document.getElementById('loginGate');
+    if(!gate){
+      gate=document.createElement('div');gate.id='loginGate';gate.className='online-gate';gate.style.zIndex='10000';
+      gate.innerHTML='<div class="online-gate-card" style="max-width:430px"><div class="online-gate-icon">◆</div><h2 class="online-gate-title">تسجيل الدخول إلى SmartNote</h2><p class="online-gate-message">أدخل اسم المستخدم وكلمة المرور للمتابعة.</p><form id="loginForm" style="display:grid;gap:12px;text-align:right"><label>اسم المستخدم<input id="loginUsername" class="filter-input" autocomplete="username" required minlength="3"></label><label>كلمة المرور<input id="loginPassword" class="filter-input" type="password" autocomplete="current-password" required></label><p id="loginError" style="color:#b42318;margin:0"></p><button class="btn primary" type="submit">دخول</button></form></div>';
+      document.body.appendChild(gate);
+      document.getElementById('loginForm').addEventListener('submit',async e=>{
+        e.preventDefault();const button=e.currentTarget.querySelector('button[type=submit]'),username=document.getElementById('loginUsername').value.trim(),password=document.getElementById('loginPassword').value;
+        button.disabled=true;document.getElementById('loginError').textContent='جارٍ التحقق...';
+        try{const result=await apiPost({action:'login',username,password});authToken=result.token;currentUser=result.user;sessionStorage.setItem(SESSION_KEY,JSON.stringify({token:authToken,user:currentUser}));await afterLogin()}
+        catch(err){document.getElementById('loginError').textContent=err.message==='unauthorized'?'اسم المستخدم أو كلمة المرور غير صحيحة':err.message}
+        finally{button.disabled=false}
+      });
+    }
+    gate.style.display='flex';document.getElementById('loginError').textContent=message;
+  }
+  async function afterLogin(){
+    const result=await apiPost({action:'load'});db=normalizeDatabase(result.data||{});isReady=true;localRevision=0;renderAll();syncNativeTaskReminders();document.getElementById('loginGate').style.display='none';hideGate();setConnection(true,'تم تسجيل الدخول؛ المزامنة كل 5 ثوانٍ.');
+    if(currentUser?.role==='admin') addAdminButton();
+  }
+  function addAdminButton(){
+    if(document.getElementById('adminUsersButton'))return;
+    const b=document.createElement('button');b.id='adminUsersButton';b.className='btn small';b.textContent='إدارة المستخدمين';b.onclick=openAdminPanel;document.querySelector('.top-actions').prepend(b);
+  }
+  async function openAdminPanel(){
+    try{
+      const data=await apiPost({action:'admin_list'});let panel=document.getElementById('adminPanel');
+      if(!panel){panel=document.createElement('div');panel.id='adminPanel';panel.className='online-gate';panel.style.zIndex='10001';panel.innerHTML='<div class="online-gate-card" style="max-width:650px;max-height:85vh;overflow:auto"><h2>إدارة المستخدمين</h2><form id="createUserForm" style="display:grid;gap:8px;text-align:right"><input id="newUsername" class="filter-input" placeholder="اسم المستخدم" required minlength="3"><input id="newPassword" class="filter-input" type="password" placeholder="كلمة المرور (10 أحرف على الأقل)" required minlength="10"><button class="btn primary">إضافة مستخدم</button></form><div id="adminUsersList" style="display:grid;gap:8px;margin-top:16px"></div><button class="btn" id="closeAdminPanel">إغلاق</button></div>';document.body.appendChild(panel);
+        panel.querySelector('#closeAdminPanel').onclick=()=>panel.style.display='none';
+        panel.querySelector('#createUserForm').onsubmit=async e=>{e.preventDefault();try{await apiPost({action:'admin_create',username:panel.querySelector('#newUsername').value,password:panel.querySelector('#newPassword').value});panel.querySelector('#newUsername').value='';panel.querySelector('#newPassword').value='';await openAdminPanel()}catch(err){toast(err.message)}};
+      }
+      panel.querySelector('#adminUsersList').innerHTML=data.users.map(u=>'<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;border-bottom:1px solid #ddd;padding:8px"><span>'+esc(u.username)+' — '+esc(u.status)+'</span><button class="btn small" data-user-id="'+esc(u.id)+'" data-user-status="'+(u.status==='active'?'disabled':'active')+'">'+(u.status==='active'?'تعطيل':'تفعيل')+'</button></div>').join('');
+      panel.querySelectorAll('[data-user-id]').forEach(b=>b.onclick=async()=>{try{await apiPost({action:'admin_status',userId:b.dataset.userId,status:b.dataset.userStatus});await openAdminPanel()}catch(err){toast(err.message)}});
+      panel.style.display='flex';
+    }catch(err){toast('تعذر فتح إدارة المستخدمين: '+err.message)}
   }
   async function initializeCloud(){
-    if(!navigator.onLine){setConnection(false,'لا يوجد اتصال بالإنترنت.');showGate('اتصل بالإنترنت ثم اضغط إعادة المحاولة. لا يتم تخزين بياناتك على هذا الجهاز.');return}
-    setConnection(false,'جاري تحميل بياناتك من Google Sheets...');
+    if(!navigator.onLine){showLogin('اتصل بالإنترنت لتسجيل الدخول.');return}
     try{
-      const result=await apiGet({action:'load',name:DATABASE_NAME});
-      if(result.error==='not_found'){
-        db=emptyDB();await saveDatabase(db);
-      }else if(result.data){db=normalizeDatabase(result.data)}else{throw new Error(result.error||'لم يتم العثور على بيانات قاعدة البيانات')}
-      isReady=true;renderAll();syncNativeTaskReminders();hideGate();setConnection(true,'مزامنة تلقائية كل 5 ثوانٍ.');
-      const requestedTaskId=new URLSearchParams(location.search).get('openTask');if(requestedTaskId){showView('tasks');if(get('tasks',requestedTaskId))openForm('task',requestedTaskId);history.replaceState(null,'',location.pathname)}
-    }catch(err){
-      isReady=false;
-      const message=err.message==='invalid_type'
-        ?'نسخة Google Apps Script المنشورة لا تتوافق مع التطبيق (invalid_type). انشر محتوى Code.gs الحالي كإصدار جديد من Deploy > Manage deployments > Edit > New version > Deploy.'
-        :'تعذر الاتصال بقاعدة البيانات: '+err.message+' تأكد أن نشر Apps Script متاح لأي شخص لديه الرابط، ثم أعد المحاولة.';
-      setConnection(false,message);
-      showGate(message);
-    }
+      const saved=sessionStorage.getItem(SESSION_KEY);
+      if(saved){const s=JSON.parse(saved);authToken=s.token||'';currentUser=s.user||null;if(authToken){await apiPost({action:'me'});await afterLogin();return}}
+    }catch(_){authToken='';currentUser=null;sessionStorage.removeItem(SESSION_KEY)}
+    showLogin();
   }
   document.getElementById('retryConnection').onclick=initializeCloud;
   document.getElementById('enableNotifications').onclick=enableNotifications;
@@ -244,7 +257,7 @@
   document.addEventListener('pointerdown',unlockNotificationAudio,{once:true});
   document.addEventListener('keydown',unlockNotificationAudio,{once:true});
   window.addEventListener('online',()=>initializeCloud());
-  window.addEventListener('offline',()=>{isReady=false;setConnection(false,'انقطع اتصال الإنترنت.');showGate('انقطع اتصال الإنترنت. التطبيق يعمل أونلاين فقط؛ أعد الاتصال ثم حاول مرة أخرى.')});
+  window.addEventListener('offline',()=>{isReady=false;setConnection(false,'انقطع اتصال الإنترنت.');showLogin('انقطع اتصال الإنترنت. أعد الاتصال ثم سجّل الدخول مجدداً.')});
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){syncCloud();checkTaskNotifications()}});
   setInterval(syncCloud,5000);
   setInterval(checkTaskNotifications,15000);
