@@ -178,23 +178,15 @@ function findUser_(username) {
 }
 function publicUser_(u) { return { id: String(u.values[0]), username: String(u.values[1]), role: String(u.values[4]), status: String(u.values[5]), mustChangePassword: u.values[7] === true || String(u.values[7]).toUpperCase() === "TRUE" }; }
 function bootstrap_(req) {
-  const props = PropertiesService.getScriptProperties();
-  const key = props.getProperty("BOOTSTRAP_KEY");
-  if (!key) throw new Error("bootstrap_disabled");
-  if (props.getProperty("BOOTSTRAP_USED") === "1") throw new Error("bootstrap_already_used");
-  if (!req.bootstrapKey || req.bootstrapKey !== key) throw new Error("unauthorized");
-  const username = cleanUsername_(req.username);
-  if (!validPassword_(req.password)) throw new Error("weak_password");
-  if (findUser_(username)) throw new Error("username_exists");
-  const user = insertUser_(username, req.password, "admin");
-  props.setProperty("BOOTSTRAP_USED", "1");
-  props.deleteProperty("BOOTSTRAP_KEY");
-  return json_({ ok: true, user: publicUser_(user) });
+  return withScriptLock_(function(){
+    const props=PropertiesService.getScriptProperties(),key=props.getProperty("BOOTSTRAP_KEY");
+    if(!key)throw new Error("bootstrap_disabled");if(props.getProperty("BOOTSTRAP_USED")==="1")throw new Error("bootstrap_already_used");
+    if(!req.bootstrapKey||req.bootstrapKey!==key)throw new Error("unauthorized");
+    const username=cleanUsername_(req.username);if(!validPassword_(req.password))throw new Error("weak_password");if(findUser_(username))throw new Error("username_exists");
+    const user=insertUser_(username,req.password,"admin");props.setProperty("BOOTSTRAP_USED","1");props.deleteProperty("BOOTSTRAP_KEY");
+    return json_({ok:true,user:publicUser_(user)});
+  });
 }
-/**
- * Run manually from the Apps Script editor once the database sheets are initialized.
- * Prompts for the first administrator and refuses to run if an account already exists.
- */
 function createFirstAdminFromPrompt() {
   const ui = SpreadsheetApp.getUi();
   const sh = users_();
@@ -333,9 +325,11 @@ function resetPassword_(id,password) {
   });
 }
 function changeOwnPassword_(u,oldPassword,newPassword){
- if(!validPassword_(newPassword))throw new Error("weak_password");
- if(hashPassword_(String(oldPassword||""),String(u.values[3]))!==String(u.values[2]))throw new Error("unauthorized");
- const salt=randomHex_(16);users_().getRange(u.row,3,1,2).setValues([[hashPassword_(newPassword,salt),salt]]);users_().getRange(u.row,8).setValue(false);users_().getRange(u.row,7).setValue(new Date().toISOString());return true;
+ return withScriptLock_(function(){
+  if(!validPassword_(newPassword))throw new Error("weak_password");
+  if(hashPassword_(String(oldPassword||""),String(u.values[3]))!==String(u.values[2]))throw new Error("unauthorized");
+  const salt=randomHex_(16),sh=users_();sh.getRange(u.row,3,1,2).setValues([[hashPassword_(newPassword,salt),salt]]);sh.getRange(u.row,8).setValue(false);sh.getRange(u.row,7).setValue(new Date().toISOString());return true;
+ });
 }
 function revokeUserSessions_(id) {
   const sh = sessions_(), rows = sh.getDataRange().getValues();
@@ -485,11 +479,12 @@ function markNotificationRead_(u,id){
  const row=match.getRow();if(String(sh.getRange(row,2).getValue())!==String(u.values[0]))throw new Error("user_not_found");
  sh.getRange(row,7).setValue(true);sh.getRange(row,9).setValue(new Date().toISOString());return true;
 }
-function setUserRole_(id, role, adminId) {
-  if (!["admin","leader","user"].includes(role)) throw new Error("invalid_role");
-  const u=findUserById_(String(id));if(!u)throw new Error("user_not_found");
-  if(String(id)===String(adminId))throw new Error("cannot_change_own_role");
+function setUserRole_(id,role,adminId){
+ return withScriptLock_(function(){
+  if(!["admin","leader","user"].includes(role))throw new Error("invalid_role");
+  const u=findUserById_(String(id));if(!u)throw new Error("user_not_found");if(String(id)===String(adminId))throw new Error("cannot_change_own_role");
   const manages=assignmentRows_().some(x=>!String(x.data.ArchivedAt||"")&&String(x.data.OwnerLeaderID)===String(id));
   if(role==="user"&&manages)throw new Error("user_manages_active_assignments");
   users_().getRange(u.row,5).setValue(role);revokeUserSessions_(id);return true;
+ });
 }
