@@ -18,6 +18,7 @@ assert(backend.includes('function sessionUser_') && backend.includes('cache.get(
 assert(backend.includes('function withScriptLock_'), 'Mutating operations must use a server lock');
 assert(backend.includes('user_has_active_assignments'), 'Deleting users with active assignments must be blocked');
 assert(backend.includes('function reviewReassignment_') && backend.includes('Validate the target before mutating'), 'Reassignment review must validate target before writing');
+assert(backend.includes('stalePendingReassignmentRequests_') && backend.includes('request_stale'), 'Ownership changes must invalidate stale reassignment requests');
 assert(backend.includes('function assignmentHistory_'), 'History must have a dedicated authorized endpoint');
 assert(backend.includes('Users_backup_'), 'User schema migration must create a backup first');
 assert(backend.includes('too_many_attempts'), 'Login attempts must be throttled');
