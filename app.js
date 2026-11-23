@@ -275,7 +275,7 @@
   async function initializeCloud(){
     const saved=localStorage.getItem(SESSION_KEY);
     if(!navigator.onLine){
-      if(saved){try{const s=JSON.parse(saved);authToken=s.token||'';currentUser=s.user||null;const cached=readLocalDatabase();if(authToken&&cached){db=cached;isReady=true;renderAll();hideGate();setConnection(false,'أنت تعمل دون اتصال. ستتم المزامنة عند عودة الإنترنت.');return}}catch{}setConnection(false,'لا يوجد اتصال؛ سيتم استعادة جلستك عند عودة الإنترنت.');return}
+      if(saved){try{const s=JSON.parse(saved);authToken=s.token||'';currentUser=s.user||null;const cached=readLocalDatabase();if(authToken&&currentUser&&cached){db=cached;isReady=true;renderAll();hideGate();setConnection(false,'أنت تعمل دون اتصال. ستتم المزامنة عند عودة الإنترنت.');return}}catch{}if(authToken&&currentUser){showLogin('لا توجد نسخة بيانات محفوظة لهذا الحساب على هذا الجهاز. اتصل بالإنترنت مرة واحدة لتحميل بياناتك.');return}showLogin('اتصل بالإنترنت لتسجيل الدخول.');return}
       showLogin('اتصل بالإنترنت لتسجيل الدخول.');return;
     }
     if(saved){
@@ -294,6 +294,8 @@
           authToken='';currentUser=null;localStorage.removeItem(SESSION_KEY);
         }else{
           // A temporary network/server error must never erase a valid locally stored session.
+          const local=readLocalDatabase();
+          if(authToken&&currentUser&&local){db=local;isReady=true;renderAll();hideGate();setConnection(false,'Offline mode: local data is available. Changes will sync when internet returns.');return;}
           setConnection(false,'تعذر الاتصال بالخادم. أعد المحاولة دون تسجيل خروجك.');
           showLogin('تعذر استعادة الجلسة حالياً بسبب الاتصال. أعد المحاولة، ولن تحتاج لإدخال كلمة المرور.');
           return;
