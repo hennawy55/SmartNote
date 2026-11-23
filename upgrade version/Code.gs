@@ -118,29 +118,27 @@ function migrateUsersSheetSchema_(sh) {
   if(desired.every((h,i)=>headers[i]===h))return;
   if(headers[7]==="MustChangePassword"&&headers[8]==="DatabaseJSON")return;
   if(headers[7]!=="DatabaseJSON")throw new Error("schema_mismatch_Users");
-  // Preserve a full pre-migration copy before changing any user rows.
   const backupName=("Users_backup_"+Utilities.formatDate(new Date(),Session.getScriptTimeZone(),"yyyyMMdd_HHmmss")).slice(0,99);
   if(!book_().getSheetByName(backupName))sh.copyTo(book_()).setName(backupName);
   const rows=lastRow>1?sh.getRange(2,1,lastRow-1,lastCol).getValues():[];
   const hasFlagColumn=headers[8]==="MustChangePassword";
-  rows.forEach((r,i)=>{
-    const flag=hasFlagColumn?r[8]:false;
-    const mustChange=flag===true||String(flag).toUpperCase()==="TRUE";
+  // Prepare and validate every account payload before modifying the live sheet.
+  const migrated=rows.map((r,i)=>{
+    const flag=hasFlagColumn?r[8]:false,mustChange=flag===true||String(flag).toUpperCase()==="TRUE";
     const chunks=[String(r[7]==null?"":r[7])];
-    for(let c=8;c<r.length;c++){
-      if(hasFlagColumn&&c===8)continue;
-      if(r[c]!==""&&r[c]!=null)chunks.push(String(r[c]));
-    }
+    for(let c=8;c<r.length;c++){if(hasFlagColumn&&c===8)continue;if(r[c]!==""&&r[c]!=null)chunks.push(String(r[c]));}
     const json=chunks.join("").replace(/\\s+$/,"");
     try{JSON.parse(json||"{}");}catch(e){throw new Error("migration_invalid_saved_data_row_"+(i+2));}
     const parts=splitSafe_(json||"{}");if(parts.length>100)throw new Error("database_too_large");
-    sh.getRange(i+2,8).setValue(mustChange);
-    const width=Math.max(1,parts.length);
-    sh.getRange(i+2,9,1,width).setNumberFormat("@").setValues([parts.concat(Array(width-parts.length).fill(""))]);
-    const clearStart=9+width;if(lastCol>=clearStart)sh.getRange(i+2,clearStart,1,lastCol-clearStart+1).clearContent();
+    return {mustChange:mustChange,parts:parts};
   });
-  sh.getRange(1,1,1,9).setValues([desired]);
-  sh.getRange(1,1,1,9).setFontWeight("bold");
+  const width=Math.max(1,...migrated.map(x=>x.parts.length));
+  if(migrated.length){
+    sh.getRange(2,8,migrated.length,1).setValues(migrated.map(x=>[x.mustChange]));
+    sh.getRange(2,9,migrated.length,width).setNumberFormat("@").setValues(migrated.map(x=>x.parts.concat(Array(width-x.parts.length).fill(""))));
+    const clearStart=9+width;if(lastCol>=clearStart)sh.getRange(2,clearStart,migrated.length,lastCol-clearStart+1).clearContent();
+  }
+  sh.getRange(1,1,1,9).setValues([desired]);sh.getRange(1,1,1,9).setFontWeight("bold");
 }
 function setupSmartNoteUpgrade() {
   const result=setupSmartNoteDatabase();
