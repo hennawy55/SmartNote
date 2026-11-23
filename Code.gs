@@ -115,7 +115,9 @@ function login_(req) {
 function sessionCacheKey_(tokenHash) { return "smartnote_session_" + tokenHash; }
 function cacheSession_(tokenHash, user, expiresAt) {
   const seconds = Math.max(1, Math.min(21600, Math.floor((Date.parse(expiresAt) - Date.now()) / 1000)));
-  if (seconds > 0) CacheService.getScriptCache().put(sessionCacheKey_(tokenHash), JSON.stringify({ user: user, expiresAt: expiresAt }), seconds);
+  // Never put password hashes or salts in the shared script cache.
+  const safeUser = { row: user.row, values: [String(user.values[0]), String(user.values[1]), "", "", String(user.values[4]), String(user.values[5]), String(user.values[6] || "")] };
+  if (seconds > 0) CacheService.getScriptCache().put(sessionCacheKey_(tokenHash), JSON.stringify({ user: safeUser, expiresAt: expiresAt }), seconds);
 }
 function clearSessionCache_(tokenHash) {
   if (tokenHash) CacheService.getScriptCache().remove(sessionCacheKey_(tokenHash));
