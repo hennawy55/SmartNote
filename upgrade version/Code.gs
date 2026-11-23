@@ -13,7 +13,8 @@ const UPGRADE_SHEETS = {
   ReassignmentRequests: ["RequestID","AssignmentID","FromUserID","FromUserName","ToUserID","ToUserName","Reason","Status","RequestedAt","ReviewedAt","ReviewedByID","ReviewedByName"],
   AssignmentNotes: ["NoteID","AssignmentID","AuthorID","AuthorName","Visibility","Body","CreatedAt","UpdatedAt"],
   Notifications: ["NotificationID","UserID","AssignmentID","Type","Title","Body","IsRead","CreatedAt","ReadAt"],
-  AuditLog: ["AuditID","ActorID","ActorName","Action","TargetID","DetailsJSON","CreatedAt","Outcome"]
+  AuditLog: ["AuditID","ActorID","ActorName","Action","TargetID","DetailsJSON","CreatedAt","Outcome"],
+  UserDatabaseMeta: ["UserID","Revision","UpdatedAt"]
 };
 
 function doGet() {
@@ -30,12 +31,12 @@ function doPost(e) {
     if (action === "login") return login_(req);
     if (action === "logout") return logout_(req);
     if (action === "change_password") return withSession_(req.token, function (user) { return { ok: true, changed: changeOwnPassword_(user, req.oldPassword, req.newPassword, req.token) }; });
-    if (action === "me") return withSession_(req.token, function (user) { return { ok: true, user: publicUser_(user), data: readDatabase_(String(user.values[0])) }; });
-    if (action === "load") return withSession_(req.token, function (user) { return { ok: true, data: readDatabase_(String(user.values[0])) }; });
+    if (action === "me") return withSession_(req.token, function (user) { const snapshot=readDatabaseSnapshot_(String(user.values[0])); return { ok: true, user: publicUser_(user), data: snapshot.data, revision: snapshot.revision }; });
+    if (action === "load") return withSession_(req.token, function (user) { const snapshot=readDatabaseSnapshot_(String(user.values[0])); return { ok: true, data: snapshot.data, revision: snapshot.revision }; });
     if (action === "save") return withSession_(req.token, function (user) {
       if (!req.data || typeof req.data !== "object" || Array.isArray(req.data)) throw new Error("invalid_data");
-      writeDatabase_(String(user.values[0]), JSON.stringify(req.data));
-      return { ok: true, saved: true };
+      const saved=writeDatabase_(String(user.values[0]), JSON.stringify(req.data), req.revision);
+      return { ok: true, saved: true, revision: saved.revision };
     });
     if (action === "admin_list") return withAdmin_(req.token, function () { return { ok: true, users: listUsers_() }; });
     if (action === "admin_audit_list") return withAdmin_(req.token, function () { return {ok:true,entries:listAudit_()}; });
@@ -84,7 +85,7 @@ function json_(obj) {
 }
 function safeError_(err) {
   const msg=String(err&&err.message||"server_error");
-  return /^(invalid_|same_assignee$|request_pending$|request_not_pending$|request_stale$|cannot_change_own_role$|cannot_delete_self$|unauthorized$|forbidden$|inactive_user$|username_exists$|bootstrap_disabled$|bootstrap_already_used$|weak_password$|user_not_found$|cannot_disable_self$|database_too_large$|database_not_configured$|user_has_active_assignments$|user_has_pending_requests$|user_manages_active_assignments$|cannot_disable_self$|last_active_admin$|operation_in_progress$|too_many_attempts$|server_error$)/.test(msg)?"server_error"===msg?msg:msg:"server_error";
+  return /^(invalid_|data_conflict$|same_assignee$|request_pending$|request_not_pending$|request_stale$|cannot_change_own_role$|cannot_delete_self$|unauthorized$|forbidden$|inactive_user$|username_exists$|bootstrap_disabled$|bootstrap_already_used$|weak_password$|user_not_found$|cannot_disable_self$|database_too_large$|database_not_configured$|user_has_active_assignments$|user_has_pending_requests$|user_manages_active_assignments$|cannot_disable_self$|last_active_admin$|operation_in_progress$|too_many_attempts$|server_error$)/.test(msg)?"server_error"===msg?msg:msg:"server_error";
 }
 function book_() {
   const id = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID");
@@ -249,7 +250,8 @@ function login_(req) {
   const token=randomHex_(32),sh=sessions_(),now=new Date(),expiry=new Date(now.getTime()+SESSION_DAYS*86400000),tokenHash=hashToken_(token),expiresAt=expiry.toISOString();
   sh.appendRow([tokenHash,String(found.values[0]),expiresAt,now.toISOString(),now.toISOString(),String(req.deviceLabel||"")]);
   cacheSession_(tokenHash,found,expiresAt);
-  return json_({ok:true,token:token,user:publicUser_(found),data:readDatabase_(found.row)});
+  const snapshot=readDatabaseSnapshot_(String(found.values[0]));
+  return json_({ok:true,token:token,user:publicUser_(found),data:snapshot.data,revision:snapshot.revision});
 }
 function sessionCacheKey_(tokenHash) { return "smartnote_session_" + tokenHash; }
 function cacheSession_(tokenHash, user, expiresAt) {
@@ -321,22 +323,43 @@ function splitSafe_(text) {
   }
   return parts.length ? parts : [""];
 }
-function readDatabase_(userId) {
+function databaseMeta_() {
+  return sheet_("UserDatabaseMeta", UPGRADE_SHEETS.UserDatabaseMeta);
+}
+function databaseMetaRecord_(userId) {
+  const sh=databaseMeta_(),last=sh.getLastRow();
+  const match=last>=2?sh.getRange(2,1,last-1,1).createTextFinder(String(userId)).matchEntireCell(true).findNext():null;
+  if(!match)return {sheet:sh,row:0,revision:0};
+  const row=match.getRow(),revision=Number(sh.getRange(row,2).getValue())||0;
+  return {sheet:sh,row:row,revision:revision};
+}
+function readDatabaseSnapshot_(userId) {
   return withScriptLock_(function(){
     const user=findUserById_(String(userId));if(!user)throw new Error("inactive_user");
-    const sh=users_(),lastCol=sh.getLastColumn();if(lastCol<9)return {};
-    const cells=sh.getRange(user.row,9,1,lastCol-8).getDisplayValues()[0];
-    const joined=cells.map(String).join("").replace(/\\s+$/, "");
-    try{return JSON.parse(joined||"{}");}catch(_){throw new Error("invalid_saved_data");}
+    const sh=users_(),lastCol=sh.getLastColumn();let data={};
+    if(lastCol>=9){
+      const cells=sh.getRange(user.row,9,1,lastCol-8).getDisplayValues()[0];
+      const joined=cells.map(String).join("").replace(/\\s+$/, "");
+      try{data=JSON.parse(joined||"{}");}catch(_){throw new Error("invalid_saved_data");}
+    }
+    const meta=databaseMetaRecord_(userId);
+    return {data:data,revision:meta.revision};
   });
 }
-function writeDatabase_(userId,json) {
+function writeDatabase_(userId,json,expectedRevision) {
   return withScriptLock_(function(){
     const user=findUserById_(String(userId));if(!user)throw new Error("inactive_user");
+    const meta=databaseMetaRecord_(userId);
+    if(!Number.isInteger(Number(expectedRevision))||Number(expectedRevision)!==meta.revision)throw new Error("data_conflict");
     const parts=splitSafe_(json);if(parts.length>100)throw new Error("database_too_large");
     const sh=users_(),startCol=9,oldWidth=Math.max(1,sh.getLastColumn()-startCol+1),width=Math.max(oldWidth,parts.length),values=[Array(width).fill("")];
     for(let i=0;i<parts.length;i++)values[0][i]=parts[i];
-    sh.getRange(user.row,startCol,1,width).setNumberFormat("@").setValues(values);sh.getRange(user.row,7).setValue(new Date().toISOString());
+    sh.getRange(user.row,startCol,1,width).setNumberFormat("@").setValues(values);
+    const now=new Date().toISOString();sh.getRange(user.row,7).setValue(now);
+    const nextRevision=meta.revision+1;
+    if(meta.row)meta.sheet.getRange(meta.row,1,1,3).setValues([[String(userId),nextRevision,now]]);
+    else meta.sheet.appendRow([String(userId),nextRevision,now]);
+    return {revision:nextRevision};
   });
 }
 function listUsers_() {

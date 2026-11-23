@@ -16,7 +16,10 @@ assert(app.includes("action:'reassignment_targets'"), 'Assignee reassignment req
 assert(app.includes("Date.now()-lastVisibleSyncAt>=30000"), 'Cloud polling must be throttled to 30 seconds');
 assert(backend.includes('function sessionUser_') && backend.includes('cache.get(key)'), 'Session cache must be used');
 assert(!backend.includes('row: user.row') && backend.includes('findUserById_(cachedId)'), 'Cached sessions must resolve users by stable ID, not stale row numbers');
-assert(backend.includes('function readDatabase_(userId)') && backend.includes('findUserById_(String(userId))'), 'Database reads and writes must resolve the account row by stable user ID');
+assert(backend.includes('function readDatabaseSnapshot_(userId)') && backend.includes('findUserById_(String(userId))'), 'Database reads and writes must resolve the account row by stable user ID');
+assert(backend.includes('UserDatabaseMeta: ["UserID","Revision","UpdatedAt"]') && backend.includes('expectedRevision)!==meta.revision') && backend.includes('throw new Error("data_conflict")'), 'Cloud database writes must reject stale revisions');
+assert(app.includes('revision:cloudRevision') && app.includes("saveError.message!=='data_conflict'"), 'Client sync must send revisions and resolve cross-device conflicts');
+assert(worker.includes('smartnote-offline-shell-v26'), 'Offline cache must be invalidated when app code changes');
 assert(app.includes('assignmentRequestsInFlight.has(key)'), 'Concurrent follow-up requests must be guarded per operation key');
 assert(app.includes('notificationStateKey=()=>'), 'Notification state must be isolated per account');
 assert(!app.includes("popup.querySelector('#assignmentHistoryButton').onclick"), 'Assignment history must have only one click handler');

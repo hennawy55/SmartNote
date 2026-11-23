@@ -9,11 +9,12 @@
   const TITLES={dashboard:['الرئيسية','ملخص سريع لكل بياناتك العقارية'],assigned:['المتابعات الموجهة','المهام المسندة إليك أو التي تدير توزيعها'],workspaces:['مساحات العمل','نظم بياناتك في مجموعات مستقلة'],projects:['المشاريع','قاعدة موحدة لكل المشروعات'],units:['الوحدات','تفاصيل الوحدات وأسعارها'],notes:['الملاحظات الذكية','كل المعلومات التي سجلتها'],clients:['العملاء','بيانات العملاء واحتياجاتهم'] ,tasks:['المتابعات','المهام والمواعيد القادمة']};
   const QUICK_ACTIONS={workspaces:['workspace','مساحة جديدة'],projects:['project','مشروع جديد'],units:['unit','وحدة جديدة'],notes:['note','ملاحظة جديدة'],clients:['client','عميل جديد'],tasks:['task','متابعة جديدة']};
   const emptyDB=()=>({version:1,workspaces:[],projects:[],units:[],notes:[],clients:[],tasks:[]});
-  let db=emptyDB(), editing=null, isReady=false, saveQueue=Promise.resolve(), syncInFlight=false, writesInProgress=0, localRevision=0;
+  let db=emptyDB(), editing=null, isReady=false, saveQueue=Promise.resolve(), syncInFlight=false, writesInProgress=0, localRevision=0, cloudRevision=0;
   let assignedItems=[],assignedArchivedItems=[],assignmentPeople=[],serverNotifications=[],serverNotificationCursor='',serverNotificationHasMore=false,serverNotificationUnreadCount=0,serverNotificationTotalCount=0;
   const localDataKey=()=>`smartnote-local-db-v1:${encodeURIComponent(currentUser?.username||'')}`;
   const pendingSyncKey=()=>`smartnote-pending-sync-v1:${encodeURIComponent(currentUser?.username||'')}`;
-  function cacheLocalDatabase(state=db,pending=false){if(!currentUser?.username)return;try{localStorage.setItem(localDataKey(),JSON.stringify(cloudPayload(state)));if(pending)localStorage.setItem(pendingSyncKey(),'1')}catch(error){toast('تعذر حفظ نسخة محلية: '+error.message)}}
+  const cloudRevisionKey=()=>`smartnote-cloud-revision-v1:${encodeURIComponent(currentUser?.username||'')}`;
+  function cacheLocalDatabase(state=db,pending=false){if(!currentUser?.username)return;try{localStorage.setItem(localDataKey(),JSON.stringify(cloudPayload(state)));localStorage.setItem(cloudRevisionKey(),String(cloudRevision||0));if(pending)localStorage.setItem(pendingSyncKey(),'1')}catch(error){toast('تعذر حفظ نسخة محلية: '+error.message)}}
   function readLocalDatabase(){try{const raw=localStorage.getItem(localDataKey());return raw?normalizeDatabase(JSON.parse(raw)):null}catch{return null}}
   function hasPendingSync(){try{return localStorage.getItem(pendingSyncKey())==='1'}catch{return false}}
   function clearPendingSync(){try{localStorage.removeItem(pendingSyncKey())}catch{}}
@@ -186,17 +187,40 @@
     cacheLocalDatabase(snapshot,true);
     if(!navigator.onLine||!authToken)return {queued:true};
     writesInProgress++;
-    saveQueue=saveQueue.catch(()=>{}).then(()=>apiPost({action:'save',data:snapshot}));
-    try{const result=await saveQueue;clearPendingSync();cacheLocalDatabase(snapshot,false);return result}catch(error){cacheLocalDatabase(snapshot,true);return {queued:true,error}}finally{writesInProgress--}
+    const requestedRevision=localRevision;
+    saveQueue=saveQueue.catch(()=>{}).then(()=>apiPost({action:'save',data:snapshot,revision:cloudRevision}));
+    try{const result=await saveQueue;cloudRevision=Number(result.revision)||cloudRevision;if(requestedRevision===localRevision){clearPendingSync();cacheLocalDatabase(snapshot,false)}else cacheLocalDatabase(db,true);return result}catch(error){cacheLocalDatabase(db,true);return {queued:true,error}}finally{writesInProgress--}
   }
   function normalizeDatabase(data){const d=data&&typeof data==='object'?data:{};return {...emptyDB(),...d,workspaces:Array.isArray(d.workspaces)?d.workspaces:(Array.isArray(d.spaces)?d.spaces:[]),tasks:Array.isArray(d.tasks)?d.tasks.map(task=>task.status==='قيد التنفيذ'&&!task.startedAt?{...task,startedAt:task.updatedAt||task.createdAt||null}:task):[]};}
   async function syncCloud(){
     if(!isReady||!authToken||!navigator.onLine||document.hidden||editing||writesInProgress||syncInFlight)return;
     syncInFlight=true;const revision=localRevision;
     try{
-      if(hasPendingSync()){await apiPost({action:'save',data:cloudPayload(db)});clearPendingSync();cacheLocalDatabase(db,false)}
+      if(hasPendingSync()){
+        const pendingLocalRevision=localRevision,localSnapshot=cloudPayload(db);
+        try{
+          const saved=await apiPost({action:'save',data:localSnapshot,revision:cloudRevision});
+          cloudRevision=Number(saved.revision)||cloudRevision;
+          if(pendingLocalRevision===localRevision){clearPendingSync();cacheLocalDatabase(db,false)}
+        }catch(saveError){
+          if(saveError.message!=='data_conflict')throw saveError;
+          const latest=await apiPost({action:'load'});
+          cloudRevision=Number(latest.revision)||0;
+          if(pendingLocalRevision!==localRevision)throw new Error('data_conflict');
+          const keepLocal=window.confirm('تم تعديل بيانات هذا الحساب من جهاز آخر. اضغط موافق للاحتفاظ بالتعديلات الموجودة على هذا الجهاز ورفعها، أو إلغاء لتحميل أحدث نسخة من السحابة.');
+          if(pendingLocalRevision!==localRevision)throw new Error('data_conflict');
+          if(keepLocal){
+            const retried=await apiPost({action:'save',data:localSnapshot,revision:cloudRevision});
+            cloudRevision=Number(retried.revision)||cloudRevision;
+            clearPendingSync();cacheLocalDatabase(db,false);
+          }else{
+            db=normalizeDatabase(latest.data||{});cloudRevision=Number(latest.revision)||0;
+            clearPendingSync();cacheLocalDatabase(db,false);renderAll();syncNativeTaskReminders();
+          }
+        }
+      }
       const result=await apiPost({action:'load'});
-      const remote=normalizeDatabase(result.data||{});
+      const remote=normalizeDatabase(result.data||{});cloudRevision=Number(result.revision)||cloudRevision;
       if(revision!==localRevision||editing||writesInProgress)return;
       const dismissed=new Set([...(db.taskNotificationDismissals||[]),...(remote.taskNotificationDismissals||[])]);remote.taskNotificationDismissals=[...dismissed];
       if(JSON.stringify(cloudPayload(remote))!==JSON.stringify(cloudPayload(db))){db=remote;cacheLocalDatabase(db,false);renderAll();syncNativeTaskReminders()}
@@ -215,7 +239,7 @@
       document.getElementById('loginForm').addEventListener('submit',async e=>{
         e.preventDefault();const button=e.currentTarget.querySelector('button[type=submit]'),username=document.getElementById('loginUsername').value.trim(),password=document.getElementById('loginPassword').value;
         button.disabled=true;button.classList.add('is-loading');document.getElementById('loginError').textContent='جارٍ التحقق من بيانات الدخول...';
-        try{const result=await apiPost({action:'login',username,password});authToken=result.token;currentUser=result.user;localStorage.setItem(SESSION_KEY,JSON.stringify({token:authToken,user:currentUser}));await afterLogin(result.data||{})}
+        try{const result=await apiPost({action:'login',username,password});authToken=result.token;currentUser=result.user;localStorage.setItem(SESSION_KEY,JSON.stringify({token:authToken,user:currentUser}));await afterLogin(result.data||{},result.revision)}
         catch(err){if(err.message==='unauthorized'||err.message==='inactive_user'){authToken='';currentUser=null;localStorage.removeItem(SESSION_KEY);document.getElementById('loginError').textContent='اسم المستخدم أو كلمة المرور غير صحيحة'}else{document.getElementById('loginError').textContent='تعذر الاتصال بالخادم: '+err.message}}
         finally{button.disabled=false;button.classList.remove('is-loading')}
       });
@@ -223,9 +247,9 @@
     }
     gate.style.display='flex';document.getElementById('loginError').textContent=message;
   }
-  async function afterLogin(preloadedData){
+  async function afterLogin(preloadedData,preloadedRevision){
     if(currentUser?.mustChangePassword){const oldPassword=prompt(document.documentElement.lang==='en'?'Temporary password:':'أدخل كلمة المرور المؤقتة:');const newPassword=prompt(document.documentElement.lang==='en'?'Choose a new password (at least 10 characters):':'اختر كلمة مرور جديدة (10 أحرف على الأقل):');if(!oldPassword||!newPassword||newPassword.length<10){authToken='';currentUser=null;localStorage.removeItem(SESSION_KEY);showLogin(document.documentElement.lang==='en'?'Password change is required to continue.':'يجب تغيير كلمة المرور للمتابعة.');return}try{await apiPost({action:'change_password',oldPassword,newPassword});currentUser.mustChangePassword=false;localStorage.setItem(SESSION_KEY,JSON.stringify({token:authToken,user:currentUser}));toast(document.documentElement.lang==='en'?'Password updated.':'تم تغيير كلمة المرور بنجاح')}catch(error){authToken='';currentUser=null;localStorage.removeItem(SESSION_KEY);showLogin(document.documentElement.lang==='en'?'Could not change password. Sign in again.':'تعذر تغيير كلمة المرور. سجل الدخول مرة أخرى.');return}}
-    const result=preloadedData&&typeof preloadedData==='object'?{data:preloadedData}:await apiPost({action:'load'});db=normalizeDatabase(result.data||{});isReady=true;localRevision=0;cacheLocalDatabase(db,false);renderAll();syncNativeTaskReminders();
+    const result=preloadedData&&typeof preloadedData==='object'?{data:preloadedData,revision:preloadedRevision}:await apiPost({action:'load'});cloudRevision=Number(result.revision??preloadedRevision??0)||0;db=normalizeDatabase(result.data||{});isReady=true;localRevision=0;cacheLocalDatabase(db,hasPendingSync());renderAll();syncNativeTaskReminders();
     const pendingTaskId=new URLSearchParams(window.location.search).get('openTask');
     if(pendingTaskId){if(get('tasks',pendingTaskId)){showView('tasks');openForm('task',pendingTaskId)}const cleanUrl=new URL(window.location.href);cleanUrl.searchParams.delete('openTask');window.history.replaceState({},'',cleanUrl.toString())}
     requestNotificationPermissionOnStartup();// Login gate is created only for manual login; keep automatic session restore safe.
@@ -407,7 +431,7 @@
   async function initializeCloud(){
     const saved=localStorage.getItem(SESSION_KEY);
     if(!navigator.onLine){
-      if(saved){try{const s=JSON.parse(saved);authToken=s.token||'';currentUser=s.user||null;const cached=readLocalDatabase();if(authToken&&currentUser&&cached){db=cached;isReady=true;renderAll();hideGate();setConnection(false,'أنت تعمل دون اتصال. ستتم المزامنة عند عودة الإنترنت.');return}}catch{}if(authToken&&currentUser){showLogin('لا توجد نسخة بيانات محفوظة لهذا الحساب على هذا الجهاز. اتصل بالإنترنت مرة واحدة لتحميل بياناتك.');return}showLogin('اتصل بالإنترنت لتسجيل الدخول.');return}
+      if(saved){try{const s=JSON.parse(saved);authToken=s.token||'';currentUser=s.user||null;cloudRevision=Number(localStorage.getItem(cloudRevisionKey())||0);const cached=readLocalDatabase();if(authToken&&currentUser&&cached){db=cached;isReady=true;renderAll();hideGate();setConnection(false,'أنت تعمل دون اتصال. ستتم المزامنة عند عودة الإنترنت.');return}}catch{}if(authToken&&currentUser){showLogin('لا توجد نسخة بيانات محفوظة لهذا الحساب على هذا الجهاز. اتصل بالإنترنت مرة واحدة لتحميل بياناتك.');return}showLogin('اتصل بالإنترنت لتسجيل الدخول.');return}
       showLogin('اتصل بالإنترنت لتسجيل الدخول.');return;
     }
     if(saved){
@@ -418,7 +442,8 @@
           currentUser=session.user||currentUser;
           localStorage.setItem(SESSION_KEY,JSON.stringify({token:authToken,user:currentUser}));
           if(hasPendingSync()){const local=readLocalDatabase();if(local){db=local;await apiPost({action:'save',data:cloudPayload(db)});clearPendingSync();cacheLocalDatabase(db,false)}else clearPendingSync()}
-          await afterLogin(hasPendingSync()?undefined:(session.data||{}));
+          if(!hasPendingSync())await afterLogin(session.data||{},session.revision);
+          else {const local=readLocalDatabase();cloudRevision=Number(session.revision)||0;if(local)await afterLogin(local,session.revision);else await afterLogin(session.data||{},session.revision)}
           return;
         }
       }catch(err){
