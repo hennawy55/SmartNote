@@ -126,61 +126,6 @@ Deno.serve(async(req:Request)=>{
    if(revokeError){console.error("PASSWORD SESSION REVOKE ERROR:",revokeError);return out(500,{ok:false,error:"password_changed_session_revoke_failed",password_changed:true,reauthenticate:true});}
    return out(200,{ok:true,reauthenticate:true});
   }
-  if(auth.p.role!=="admin")return out(403,{ok:false,error:"admin_required"});
-  if(action==="admin_audit_list"){
-   const {data,error}=await db.from("audit_log").select("*").order("created_at",{ascending:false}).limit(200);
-   if(error){console.error("AUDIT LIST ERROR:",error);return out(500,{ok:false,error:"audit_list_failed"});}
-   return out(200,{ok:true,entries:(data||[]).map((x:any)=>({id:x.id,actorName:x.actor_name,action:x.action,targetId:x.target_id,details:x.details,createdAt:x.created_at,outcome:x.outcome}))});
-  }
-  if(action==="admin_list_users"){
-   const {data,error}=await db.from("profiles").select("id,username,role,status,must_change_password,created_at,updated_at").order("created_at",{ascending:false});
-   if(error)return out(500,{ok:false,error:"list_failed"});return out(200,{ok:true,users:data});
-  }
-  if(action==="admin_create_user"){
-   const result=await createAccount(b.username,b.password,b.role||"user",true);if(result.error)return out(400,{ok:false,error:result.error});
-   await audit(auth.p.id,"admin_create_user",result.id,{username:result.username,role:result.role});return out(201,{ok:true,user:result});
-  }
-  if(action==="admin_set_status"){
-   const id=typeof b.userId==="string"?b.userId:"",status=b.status;
-   if(!id||!["active","disabled"].includes(status))return out(400,{ok:false,error:"invalid_status"});
-   if(id===auth.p.id&&status==="disabled")return out(400,{ok:false,error:"cannot_disable_self"});
-   const {data:target,error:targetError}=await db.from("profiles").select("id,role").eq("id",id).maybeSingle();if(targetError){console.error("STATUS TARGET LOOKUP ERROR:",targetError);return out(500,{ok:false,error:"status_update_failed"});}if(!target)return out(404,{ok:false,error:"user_not_found"});
-   if(target.role==="admin"&&status==="disabled"){const {count,error:countError}=await db.from("profiles").select("id",{count:"exact",head:true}).eq("role","admin").eq("status","active");if(countError){console.error("ACTIVE ADMIN COUNT ERROR:",countError);return out(500,{ok:false,error:"status_update_failed"});}if((count||0)<=1)return out(400,{ok:false,error:"last_active_admin"});}
-   const {error}=await db.from("profiles").update({status}).eq("id",id);if(error)return out(500,{ok:false,error:"status_update_failed"});
-   if(status==="disabled"){
-    const {error:revokeError}=await db.from("auth_sessions").update({revoked_at:new Date().toISOString()}).eq("user_id",id).is("revoked_at",null);
-    if(revokeError){console.error("STATUS SESSION REVOKE ERROR:",revokeError);return out(500,{ok:false,error:"status_updated_session_revoke_failed",status_updated:true});}
-   }
-   await audit(auth.p.id,"admin_set_status",id,{status});return out(200,{ok:true});
-  }
-  if(action==="admin_set_role"){
-   const id=typeof b.userId==="string"?b.userId:"",role=b.role;if(!id||!["admin","leader","user"].includes(role))return out(400,{ok:false,error:"invalid_role"});
-   const {data:target,error:targetError}=await db.from("profiles").select("id,role").eq("id",id).maybeSingle();if(targetError){console.error("ROLE TARGET LOOKUP ERROR:",targetError);return out(500,{ok:false,error:"role_update_failed"});}if(!target)return out(404,{ok:false,error:"user_not_found"});
-   if(target.role==="admin"&&role!=="admin"){const {count,error:countError}=await db.from("profiles").select("id",{count:"exact",head:true}).eq("role","admin").eq("status","active");if(countError){console.error("ACTIVE ADMIN COUNT ERROR:",countError);return out(500,{ok:false,error:"role_update_failed"});}if((count||0)<=1)return out(400,{ok:false,error:"last_active_admin"});}
-   const {error}=await db.from("profiles").update({role}).eq("id",id);if(error)return out(500,{ok:false,error:"role_update_failed"});
-   await audit(auth.p.id,"admin_set_role",id,{role});return out(200,{ok:true});
-  }
-  if(action==="admin_reset_password"){
-   const id=typeof b.userId==="string"?b.userId:"",pw=b.newPassword;if(!id||!validPassword(pw))return out(400,{ok:false,error:"weak_password_or_user"});
-   const {data:target}=await db.from("profiles").select("id").eq("id",id).maybeSingle();if(!target)return out(404,{ok:false,error:"user_not_found"});
-   const salt=random(16),{error}=await db.from("auth_accounts").update({password_hash:await derive(pw,salt),password_salt:salt,password_iterations:ITER,password_changed_at:new Date().toISOString()}).eq("user_id",id);
-   if(error)return out(500,{ok:false,error:"password_reset_failed"});
-   const {error:profileError}=await db.from("profiles").update({must_change_password:true}).eq("id",id);
-   if(profileError){console.error("RESET PASSWORD PROFILE ERROR:",profileError);return out(500,{ok:false,error:"password_reset_profile_update_failed",password_reset:true});}
-   const {error:revokeError}=await db.from("auth_sessions").update({revoked_at:new Date().toISOString()}).eq("user_id",id).is("revoked_at",null);
-   if(revokeError){console.error("RESET PASSWORD SESSION REVOKE ERROR:",revokeError);return out(500,{ok:false,error:"password_reset_session_revoke_failed",password_reset:true});}
-   await audit(auth.p.id,"admin_reset_password",id);return out(200,{ok:true});
-  }
-  if(action==="admin_delete_user"){
-   const id=typeof b.userId==="string"?b.userId:"";if(!id||id===auth.p.id)return out(400,{ok:false,error:"invalid_user"});
-   const {data:target,error:targetError}=await db.from("profiles").select("id,role").eq("id",id).maybeSingle();if(targetError){console.error("DELETE TARGET LOOKUP ERROR:",targetError);return out(500,{ok:false,error:"delete_failed"});}if(!target)return out(404,{ok:false,error:"user_not_found"});
-   if(target.role==="admin"){const {count,error:countError}=await db.from("profiles").select("id",{count:"exact",head:true}).eq("role","admin");if(countError){console.error("ADMIN COUNT ERROR:",countError);return out(500,{ok:false,error:"delete_failed"});}if((count||0)<=1)return out(400,{ok:false,error:"last_admin"});}
-   const {error:revokeError}=await db.from("auth_sessions").update({revoked_at:new Date().toISOString()}).eq("user_id",id).is("revoked_at",null);
-   if(revokeError){console.error("DELETE SESSION REVOKE ERROR:",revokeError);return out(500,{ok:false,error:"delete_failed"});}
-   const {error}=await db.from("profiles").delete().eq("id",id);if(error)return out(500,{ok:false,error:"delete_failed"});
-   await audit(auth.p.id,"admin_delete_user",id);return out(200,{ok:true});
-  }
-
   if(action==="assignment_list"||action==="assignment_archived_list"){
    const q=db.from("assignments").select("*").order("updated_at",{ascending:false});
    const {data,error}=await q;
@@ -308,6 +253,61 @@ Deno.serve(async(req:Request)=>{
   if(action==="notification_read"){
    const {error}=await db.from("notifications").update({is_read:true,read_at:new Date().toISOString()}).eq("id",String(b.notificationId||"")).eq("user_id",auth.p.id);if(error)throw error;
    return out(200,{ok:true,read:true});
+  }
+
+  if(auth.p.role!=="admin")return out(403,{ok:false,error:"admin_required"});
+  if(action==="admin_audit_list"){
+   const {data,error}=await db.from("audit_log").select("*").order("created_at",{ascending:false}).limit(200);
+   if(error){console.error("AUDIT LIST ERROR:",error);return out(500,{ok:false,error:"audit_list_failed"});}
+   return out(200,{ok:true,entries:(data||[]).map((x:any)=>({id:x.id,actorName:x.actor_name,action:x.action,targetId:x.target_id,details:x.details,createdAt:x.created_at,outcome:x.outcome}))});
+  }
+  if(action==="admin_list_users"){
+   const {data,error}=await db.from("profiles").select("id,username,role,status,must_change_password,created_at,updated_at").order("created_at",{ascending:false});
+   if(error)return out(500,{ok:false,error:"list_failed"});return out(200,{ok:true,users:data});
+  }
+  if(action==="admin_create_user"){
+   const result=await createAccount(b.username,b.password,b.role||"user",true);if(result.error)return out(400,{ok:false,error:result.error});
+   await audit(auth.p.id,"admin_create_user",result.id,{username:result.username,role:result.role});return out(201,{ok:true,user:result});
+  }
+  if(action==="admin_set_status"){
+   const id=typeof b.userId==="string"?b.userId:"",status=b.status;
+   if(!id||!["active","disabled"].includes(status))return out(400,{ok:false,error:"invalid_status"});
+   if(id===auth.p.id&&status==="disabled")return out(400,{ok:false,error:"cannot_disable_self"});
+   const {data:target,error:targetError}=await db.from("profiles").select("id,role").eq("id",id).maybeSingle();if(targetError){console.error("STATUS TARGET LOOKUP ERROR:",targetError);return out(500,{ok:false,error:"status_update_failed"});}if(!target)return out(404,{ok:false,error:"user_not_found"});
+   if(target.role==="admin"&&status==="disabled"){const {count,error:countError}=await db.from("profiles").select("id",{count:"exact",head:true}).eq("role","admin").eq("status","active");if(countError){console.error("ACTIVE ADMIN COUNT ERROR:",countError);return out(500,{ok:false,error:"status_update_failed"});}if((count||0)<=1)return out(400,{ok:false,error:"last_active_admin"});}
+   const {error}=await db.from("profiles").update({status}).eq("id",id);if(error)return out(500,{ok:false,error:"status_update_failed"});
+   if(status==="disabled"){
+    const {error:revokeError}=await db.from("auth_sessions").update({revoked_at:new Date().toISOString()}).eq("user_id",id).is("revoked_at",null);
+    if(revokeError){console.error("STATUS SESSION REVOKE ERROR:",revokeError);return out(500,{ok:false,error:"status_updated_session_revoke_failed",status_updated:true});}
+   }
+   await audit(auth.p.id,"admin_set_status",id,{status});return out(200,{ok:true});
+  }
+  if(action==="admin_set_role"){
+   const id=typeof b.userId==="string"?b.userId:"",role=b.role;if(!id||!["admin","leader","user"].includes(role))return out(400,{ok:false,error:"invalid_role"});
+   const {data:target,error:targetError}=await db.from("profiles").select("id,role").eq("id",id).maybeSingle();if(targetError){console.error("ROLE TARGET LOOKUP ERROR:",targetError);return out(500,{ok:false,error:"role_update_failed"});}if(!target)return out(404,{ok:false,error:"user_not_found"});
+   if(target.role==="admin"&&role!=="admin"){const {count,error:countError}=await db.from("profiles").select("id",{count:"exact",head:true}).eq("role","admin").eq("status","active");if(countError){console.error("ACTIVE ADMIN COUNT ERROR:",countError);return out(500,{ok:false,error:"role_update_failed"});}if((count||0)<=1)return out(400,{ok:false,error:"last_active_admin"});}
+   const {error}=await db.from("profiles").update({role}).eq("id",id);if(error)return out(500,{ok:false,error:"role_update_failed"});
+   await audit(auth.p.id,"admin_set_role",id,{role});return out(200,{ok:true});
+  }
+  if(action==="admin_reset_password"){
+   const id=typeof b.userId==="string"?b.userId:"",pw=b.newPassword;if(!id||!validPassword(pw))return out(400,{ok:false,error:"weak_password_or_user"});
+   const {data:target}=await db.from("profiles").select("id").eq("id",id).maybeSingle();if(!target)return out(404,{ok:false,error:"user_not_found"});
+   const salt=random(16),{error}=await db.from("auth_accounts").update({password_hash:await derive(pw,salt),password_salt:salt,password_iterations:ITER,password_changed_at:new Date().toISOString()}).eq("user_id",id);
+   if(error)return out(500,{ok:false,error:"password_reset_failed"});
+   const {error:profileError}=await db.from("profiles").update({must_change_password:true}).eq("id",id);
+   if(profileError){console.error("RESET PASSWORD PROFILE ERROR:",profileError);return out(500,{ok:false,error:"password_reset_profile_update_failed",password_reset:true});}
+   const {error:revokeError}=await db.from("auth_sessions").update({revoked_at:new Date().toISOString()}).eq("user_id",id).is("revoked_at",null);
+   if(revokeError){console.error("RESET PASSWORD SESSION REVOKE ERROR:",revokeError);return out(500,{ok:false,error:"password_reset_session_revoke_failed",password_reset:true});}
+   await audit(auth.p.id,"admin_reset_password",id);return out(200,{ok:true});
+  }
+  if(action==="admin_delete_user"){
+   const id=typeof b.userId==="string"?b.userId:"";if(!id||id===auth.p.id)return out(400,{ok:false,error:"invalid_user"});
+   const {data:target,error:targetError}=await db.from("profiles").select("id,role").eq("id",id).maybeSingle();if(targetError){console.error("DELETE TARGET LOOKUP ERROR:",targetError);return out(500,{ok:false,error:"delete_failed"});}if(!target)return out(404,{ok:false,error:"user_not_found"});
+   if(target.role==="admin"){const {count,error:countError}=await db.from("profiles").select("id",{count:"exact",head:true}).eq("role","admin");if(countError){console.error("ADMIN COUNT ERROR:",countError);return out(500,{ok:false,error:"delete_failed"});}if((count||0)<=1)return out(400,{ok:false,error:"last_admin"});}
+   const {error:revokeError}=await db.from("auth_sessions").update({revoked_at:new Date().toISOString()}).eq("user_id",id).is("revoked_at",null);
+   if(revokeError){console.error("DELETE SESSION REVOKE ERROR:",revokeError);return out(500,{ok:false,error:"delete_failed"});}
+   const {error}=await db.from("profiles").delete().eq("id",id);if(error)return out(500,{ok:false,error:"delete_failed"});
+   await audit(auth.p.id,"admin_delete_user",id);return out(200,{ok:true});
   }
 
   return out(400,{ok:false,error:"unknown_action"});
