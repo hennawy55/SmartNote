@@ -249,3 +249,11 @@ grant select on public.reassignment_requests to authenticated;
 grant select on public.assignment_notes to authenticated;
 grant select, update on public.notifications to authenticated;
 grant select on public.audit_log to authenticated;
+
+-- Restrict helper functions to signed-in users.
+revoke all on function public.current_user_role() from public, anon;
+revoke all on function public.is_admin() from public, anon;
+revoke all on function public.is_active_user() from public, anon;
+grant execute on function public.current_user_role() to authenticated;
+grant execute on function public.is_admin() to authenticated;
+grant execute on function public.is_active_user() to authenticated;
