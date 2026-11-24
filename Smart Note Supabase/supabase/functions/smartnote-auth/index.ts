@@ -177,7 +177,7 @@ Deno.serve(async(req:Request)=>{
    if(action==="assignment_targets"||action==="reassignment_targets"){
     if(action==="assignment_targets"&&!manager)return out(403,{ok:false,error:"forbidden"});
     if(action==="reassignment_targets"&&a.assignee_id!==auth.p.id)return out(403,{ok:false,error:"forbidden"});
-    if(!["admin","leader"].includes(auth.p.role))return out(403,{ok:false,error:"forbidden"});
+    if(action==="assignment_targets"&&!["admin","leader"].includes(auth.p.role))return out(403,{ok:false,error:"forbidden"});
     const {data,error}=await db.from("profiles").select("id,username,role").eq("status","active").order("username");if(error)throw error;
     return out(200,{ok:true,users:(data||[]).filter((u:any)=>u.id!==auth.p.id&&u.id!==String(b.excludeUserId||"")&&(auth.p.role==="admin"||u.role!=="admin"))});
    }
