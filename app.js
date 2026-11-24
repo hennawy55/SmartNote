@@ -1,6 +1,7 @@
 (() => {
   'use strict';
-  const API_URL='https://cantyrqkkbqwrajghluw.supabase.co/functions/v1/smartnote-auth';\n  const API_KEY='sb_publishable_PdO0cP98yMMPHLUrJAES0A_b9Z4JlpY';
+  const API_URL='https://cantyrqkkbqwrajghluw.supabase.co/functions/v1/smartnote-auth';
+  const API_KEY='sb_publishable_PdO0cP98yMMPHLUrJAES0A_b9Z4JlpY';
   const SESSION_KEY='smartnote-auth-session-v2';
   const DATABASE_NAME='SMARTNOTE_USER_DATABASE_V2';
   let authToken='', currentUser=null;
