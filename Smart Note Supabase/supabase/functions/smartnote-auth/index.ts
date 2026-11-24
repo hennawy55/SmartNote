@@ -81,6 +81,11 @@ async function login(u:string,pw:string){
  if(sessionError){console.error("SESSION CREATE ERROR:",sessionError);return out(500,{ok:false,error:"session_create_failed"});}
  return out(200,{ok:true,token,expiresAt:expires,user,data:await readNotebook(a.user_id)});
 }
+
+function assignmentPublic(a:any){return {id:a.id,title:a.title,description:a.description,type:a.assignment_type,clientName:a.client_name,clientPhone:a.client_phone,status:a.status,priority:a.priority,dueAt:a.due_at,createdAt:a.created_at,assignedAt:a.assigned_at,updatedAt:a.updated_at,createdBy:a.created_by,createdByName:a.created_by_name,ownerLeaderId:a.owner_leader_id,ownerLeaderName:a.owner_leader_name,assigneeId:a.assignee_id,assigneeName:a.assignee_name,archivedAt:a.archived_at,viewedAt:a.viewed_at};}
+async function assignmentActivity(id:string,user:any,action:string,details:any={}){const {error}=await db.from("assignment_activity").insert({assignment_id:id,actor_id:user.id,actor_name:user.username,action,details});if(error)throw error;}
+async function assignmentNotify(userId:string,id:string,type:string,title:string,body:string){const {error}=await db.from("notifications").insert({user_id:userId,assignment_id:id,type,title,body});if(error)throw error;}
+
 Deno.serve(async(req:Request)=>{
  if(req.method==="OPTIONS")return new Response("ok",{headers:cors});if(req.method!=="POST")return out(405,{ok:false,error:"method_not_allowed"});
  try{
@@ -170,6 +175,136 @@ Deno.serve(async(req:Request)=>{
    const {error}=await db.from("profiles").delete().eq("id",id);if(error)return out(500,{ok:false,error:"delete_failed"});
    await audit(auth.p.id,"admin_delete_user",id);return out(200,{ok:true});
   }
+
+  if(action==="assignment_list"||action==="assignment_archived_list"){
+   const q=db.from("assignments").select("*").order("updated_at",{ascending:false});
+   const {data,error}=await q;
+   if(error)throw error;
+   const rows=(data||[]).filter((a:any)=>auth.p.role==="admin"||a.assignee_id===auth.p.id||a.owner_leader_id===auth.p.id);
+   const archived=action==="assignment_archived_list";
+   return out(200,{ok:true,assignments:rows.filter((a:any)=>!!a.archived_at===archived).map(assignmentPublic)});
+  }
+  if(action==="leader_users"){
+   if(!["admin","leader"].includes(auth.p.role))return out(403,{ok:false,error:"forbidden"});
+   const {data,error}=await db.from("profiles").select("id,username,role,status").eq("status","active").order("username");
+   if(error)throw error;
+   return out(200,{ok:true,users:(data||[]).filter((u:any)=>u.id!==auth.p.id&&(auth.p.role==="admin"||u.role!=="admin"))});
+  }
+  if(action==="assignment_create"){
+   if(!["admin","leader"].includes(auth.p.role))return out(403,{ok:false,error:"forbidden"});
+   const assigneeId=String(b.assigneeId||"");
+   const {data:target,error:te}=await db.from("profiles").select("id,username,role,status").eq("id",assigneeId).maybeSingle();
+   if(te)throw te;if(!target||target.status!=="active"||target.id===auth.p.id||(auth.p.role!=="admin"&&target.role==="admin"))return out(400,{ok:false,error:"invalid_assignee"});
+   const type=b.assignmentType==="client"?"client":"task",title=String(type==="client"?(b.clientName||b.title||""):b.title||"").trim();
+   if(!title||title.length>180)return out(400,{ok:false,error:"invalid_title"});
+   const priority=["low","normal","high","urgent"].includes(b.priority)?b.priority:"normal";
+   const dueAt=b.dueAt?new Date(b.dueAt).toISOString():null;
+   const row={title,description:String(b.description||"").slice(0,5000),status:"new",priority,due_at:dueAt,created_by:auth.p.id,created_by_name:auth.p.username,owner_leader_id:auth.p.id,owner_leader_name:auth.p.username,assignee_id:target.id,assignee_name:target.username,assignment_type:type,client_name:type==="client"?title:"",client_phone:type==="client"?String(b.clientPhone||"").slice(0,30):""};
+   const {data:a,error}=await db.from("assignments").insert(row).select("*").single();if(error)throw error;
+   await assignmentActivity(a.id,auth.p,"created",{assignee:target.username});await assignmentNotify(target.id,a.id,"assigned","متابعة جديدة",title+" — تم إسناد متابعة إليك");
+   return out(201,{ok:true,assignment:assignmentPublic(a)});
+  }
+  if(action==="assignment_detail"||action==="assignment_history"||action==="assignment_status"||action==="assignment_archive"||action==="assignment_restore"||action==="assignment_reassign"||action==="assignment_update"||action==="assignment_note_add"||action==="assignment_targets"||action==="reassignment_targets"||action==="reassignment_request"||action==="reassignment_review"){
+   const id=String(b.assignmentId||"");
+   const {data:a,error:ae}=await db.from("assignments").select("*").eq("id",id).maybeSingle();
+   if(ae)throw ae;if(!a)return out(404,{ok:false,error:"assignment_not_found"});
+   const manager=auth.p.role==="admin"||a.owner_leader_id===auth.p.id;
+   const visible=auth.p.role==="admin"||a.owner_leader_id===auth.p.id||a.assignee_id===auth.p.id;
+   if(!visible)return out(403,{ok:false,error:"forbidden"});
+   const publicA=assignmentPublic(a);
+   if(action==="assignment_detail"){
+    if(a.assignee_id===auth.p.id&&!a.viewed_at){const now=new Date().toISOString();await db.from("assignments").update({viewed_at:now,status:a.status==="new"?"viewed":a.status,updated_at:now}).eq("id",id);await assignmentActivity(id,auth.p,"viewed",{});}
+    const [{data:notes,error:ne},{data:requests,error:re}]=await Promise.all([
+     db.from("assignment_notes").select("*").eq("assignment_id",id).order("created_at"),
+     db.from("reassignment_requests").select("*").eq("assignment_id",id).order("requested_at",{ascending:false})
+    ]);if(ne)throw ne;if(re)throw re;
+    return out(200,{ok:true,assignment:{...publicA,notes:(notes||[]).filter((n:any)=>n.visibility==="shared"||n.author_id===auth.p.id).map((n:any)=>({id:n.id,authorName:n.author_name,visibility:n.visibility,body:n.body,createdAt:n.created_at})),requests:manager?(requests||[]).map((x:any)=>({id:x.id,fromUserName:x.from_user_name,toUserName:x.to_user_name,reason:x.reason,status:x.status,requestedAt:x.requested_at})):[]}});
+   }
+   if(action==="assignment_history"){
+    const {data,error}=await db.from("assignment_activity").select("*").eq("assignment_id",id).order("created_at",{ascending:false}).limit(200);if(error)throw error;
+    return out(200,{ok:true,history:(data||[]).reverse().map((x:any)=>({actorName:x.actor_name,action:x.action,details:x.details,createdAt:x.created_at}))});
+   }
+   if(action==="assignment_targets"||action==="reassignment_targets"){
+    if(action==="assignment_targets"&&!manager)return out(403,{ok:false,error:"forbidden"});
+    if(action==="reassignment_targets"&&a.assignee_id!==auth.p.id)return out(403,{ok:false,error:"forbidden"});
+    if(!["admin","leader"].includes(auth.p.role))return out(403,{ok:false,error:"forbidden"});
+    const {data,error}=await db.from("profiles").select("id,username,role").eq("status","active").order("username");if(error)throw error;
+    return out(200,{ok:true,users:(data||[]).filter((u:any)=>u.id!==auth.p.id&&u.id!==String(b.excludeUserId||"")&&(auth.p.role==="admin"||u.role!=="admin"))});
+   }
+   if(action==="assignment_status"){
+    if(a.assignee_id!==auth.p.id&&!manager)return out(403,{ok:false,error:"forbidden"});
+    if(!["new","viewed","in_progress","paused","completed","cancelled"].includes(b.status))return out(400,{ok:false,error:"invalid_status"});
+    const now=new Date().toISOString(),patch:any={status:b.status,updated_at:now};if(a.assignee_id===auth.p.id&&!a.viewed_at)patch.viewed_at=now;
+    const {error}=await db.from("assignments").update(patch).eq("id",id);if(error)throw error;
+    await assignmentActivity(id,auth.p,"status_changed",{status:b.status});
+    if(b.status==="completed")await assignmentNotify(a.owner_leader_id,id,"completed","تم إغلاق المتابعة",a.title+" — تم إغلاقها");
+    return out(200,{ok:true,assignment:{...publicA,status:b.status,updatedAt:now}});
+   }
+   if(action==="assignment_archive"||action==="assignment_restore"){
+    if(!manager)return out(403,{ok:false,error:"forbidden"});
+    const now=new Date().toISOString(),archived=action==="assignment_archive";
+    const {error}=await db.from("assignments").update({archived_at:archived?now:null,updated_at:now}).eq("id",id);if(error)throw error;
+    await assignmentActivity(id,auth.p,archived?"archived":"restored",{});
+    return out(200,{ok:true,archived});
+   }
+   if(action==="assignment_update"){
+    if(!manager)return out(403,{ok:false,error:"forbidden"});
+    const p=b.patch||{},patch:any={updated_at:new Date().toISOString()};
+    if(p.title!==undefined){if(!String(p.title).trim())return out(400,{ok:false,error:"invalid_title"});patch.title=String(p.title).slice(0,180);}
+    if(p.description!==undefined)patch.description=String(p.description).slice(0,5000);
+    if(p.priority!==undefined){if(!["low","normal","high","urgent"].includes(p.priority))return out(400,{ok:false,error:"invalid_priority"});patch.priority=p.priority;}
+    if(p.dueAt!==undefined)patch.due_at=p.dueAt?new Date(p.dueAt).toISOString():null;
+    const {error}=await db.from("assignments").update(patch).eq("id",id);if(error)throw error;
+    await assignmentActivity(id,auth.p,"updated",p);return out(200,{ok:true,updated:true});
+   }
+   if(action==="assignment_reassign"){
+    if(!manager)return out(403,{ok:false,error:"forbidden"});
+    const {data:t,error:te}=await db.from("profiles").select("id,username,role,status").eq("id",String(b.toUserId||"")).maybeSingle();if(te)throw te;
+    if(!t||t.status!=="active"||t.id===auth.p.id||t.id===a.assignee_id||(auth.p.role!=="admin"&&t.role==="admin"))return out(400,{ok:false,error:"invalid_assignee"});
+    const now=new Date().toISOString();const {error}=await db.from("assignments").update({assignee_id:t.id,assignee_name:t.username,assigned_at:now,updated_at:now,viewed_at:null,status:a.status==="viewed"?"new":a.status}).eq("id",id);if(error)throw error;
+    await assignmentActivity(id,auth.p,"reassigned",{from:a.assignee_name,to:t.username});await assignmentNotify(t.id,id,"assigned","متابعة جديدة",a.title+" — تم إسناد متابعة إليك");
+    return out(200,{ok:true,assignment:{...publicA,assigneeId:t.id,assigneeName:t.username}});
+   }
+   if(action==="assignment_note_add"){
+    const body=String(b.body||"").trim();if(!body||body.length>5000)return out(400,{ok:false,error:"invalid_note"});
+    const visibility=b.visibility==="shared"?"shared":"private";
+    const {data:n,error}=await db.from("assignment_notes").insert({assignment_id:id,author_id:auth.p.id,author_name:auth.p.username,visibility,body}).select("*").single();if(error)throw error;
+    await assignmentActivity(id,auth.p,"note_added",{visibility});return out(201,{ok:true,note:{id:n.id,visibility:n.visibility,body:n.body,createdAt:n.created_at}});
+   }
+   if(action==="reassignment_request"){
+    if(a.assignee_id!==auth.p.id)return out(403,{ok:false,error:"forbidden"});
+    const reason=String(b.reason||"").trim();if(!reason)return out(400,{ok:false,error:"invalid_reason"});
+    const {count,error:ce}=await db.from("reassignment_requests").select("id",{count:"exact",head:true}).eq("assignment_id",id).eq("status","pending");if(ce)throw ce;if((count||0)>0)return out(409,{ok:false,error:"request_pending"});
+    const {data:t,error:te}=await db.from("profiles").select("id,username,role,status").eq("id",String(b.toUserId||"")).maybeSingle();if(te)throw te;
+    if(!t||t.status!=="active"||t.id===auth.p.id||t.role==="admin")return out(400,{ok:false,error:"invalid_assignee"});
+    const {data:q,error}=await db.from("reassignment_requests").insert({assignment_id:id,from_user_id:auth.p.id,from_user_name:auth.p.username,to_user_id:t.id,to_user_name:t.username,reason}).select("*").single();if(error)throw error;
+    await assignmentActivity(id,auth.p,"reassignment_requested",{to:t.username,reason});await assignmentNotify(a.owner_leader_id,id,"reassignment_request","طلب إعادة إسناد",a.title+" — "+reason);
+    return out(201,{ok:true,request:{id:q.id,status:q.status}});
+   }
+   if(action==="reassignment_review"){
+    if(!manager)return out(403,{ok:false,error:"forbidden"});
+    const {data:q,error:qe}=await db.from("reassignment_requests").select("*").eq("id",String(b.requestId||"")).eq("assignment_id",id).maybeSingle();if(qe)throw qe;
+    if(!q||q.status!=="pending")return out(409,{ok:false,error:"request_not_pending"});
+    if(q.from_user_id!==a.assignee_id){await db.from("reassignment_requests").update({status:"stale"}).eq("id",q.id);return out(409,{ok:false,error:"request_stale"});}
+    const approve=b.approve===true;const now=new Date().toISOString();
+    if(approve){const {data:t,error:te}=await db.from("profiles").select("id,username,status").eq("id",q.to_user_id).maybeSingle();if(te)throw te;if(!t||t.status!=="active")return out(400,{ok:false,error:"invalid_assignee"});const {error}=await db.from("assignments").update({assignee_id:t.id,assignee_name:t.username,assigned_at:now,updated_at:now,viewed_at:null,status:a.status==="viewed"?"new":a.status}).eq("id",id);if(error)throw error;}
+    const {error}=await db.from("reassignment_requests").update({status:approve?"approved":"rejected",reviewed_at:now,reviewed_by_id:auth.p.id,reviewed_by_name:auth.p.username}).eq("id",q.id);if(error)throw error;
+    await assignmentActivity(id,auth.p,approve?"reassignment_approved":"reassignment_rejected",{requestId:q.id});
+    if(approve)await assignmentNotify(q.to_user_id,id,"assigned","متابعة محولة إليك",a.title);
+    await assignmentNotify(q.from_user_id,id,"reassignment_result",approve?"تمت الموافقة على النقل":"تم رفض النقل",a.title);
+    return out(200,{ok:true,request:{id:q.id,status:approve?"approved":"rejected"}});
+   }
+  }
+  if(action==="notification_list"){
+   const {data,error}=await db.from("notifications").select("*").eq("user_id",auth.p.id).order("created_at",{ascending:false}).limit(100);if(error)throw error;
+   const {count}=await db.from("notifications").select("id",{count:"exact",head:true}).eq("user_id",auth.p.id).eq("is_read",false);
+   return out(200,{ok:true,notifications:(data||[]).map((n:any)=>({id:n.id,assignmentId:n.assignment_id,type:n.type,title:n.title,body:n.body,isRead:n.is_read,createdAt:n.created_at})),unreadCount:count||0,totalCount:(data||[]).length,hasMore:false,nextCursor:""});
+  }
+  if(action==="notification_read"){
+   const {error}=await db.from("notifications").update({is_read:true,read_at:new Date().toISOString()}).eq("id",String(b.notificationId||"")).eq("user_id",auth.p.id);if(error)throw error;
+   return out(200,{ok:true,read:true});
+  }
+
   return out(400,{ok:false,error:"unknown_action"});
  }catch(_){return out(500,{ok:false,error:"internal_error"});}
 });
