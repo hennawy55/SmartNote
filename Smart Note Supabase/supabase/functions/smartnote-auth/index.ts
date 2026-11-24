@@ -117,8 +117,8 @@ Deno.serve(async(req:Request)=>{
    const id=typeof b.userId==="string"?b.userId:"",status=b.status;
    if(!id||!["active","disabled"].includes(status))return out(400,{ok:false,error:"invalid_status"});
    if(id===auth.p.id&&status==="disabled")return out(400,{ok:false,error:"cannot_disable_self"});
-   const {data:target}=await db.from("profiles").select("id,role").eq("id",id).maybeSingle();if(!target)return out(404,{ok:false,error:"user_not_found"});
-   if(target.role==="admin"&&status==="disabled"){const {count}=await db.from("profiles").select("id",{count:"exact",head:true}).eq("role","admin").eq("status","active");if((count||0)<=1)return out(400,{ok:false,error:"last_active_admin"});}
+   const {data:target,error:targetError}=await db.from("profiles").select("id,role").eq("id",id).maybeSingle();if(targetError){console.error("STATUS TARGET LOOKUP ERROR:",targetError);return out(500,{ok:false,error:"status_update_failed"});}if(!target)return out(404,{ok:false,error:"user_not_found"});
+   if(target.role==="admin"&&status==="disabled"){const {count,error:countError}=await db.from("profiles").select("id",{count:"exact",head:true}).eq("role","admin").eq("status","active");if(countError){console.error("ACTIVE ADMIN COUNT ERROR:",countError);return out(500,{ok:false,error:"status_update_failed"});}if((count||0)<=1)return out(400,{ok:false,error:"last_active_admin"});}
    const {error}=await db.from("profiles").update({status}).eq("id",id);if(error)return out(500,{ok:false,error:"status_update_failed"});
    if(status==="disabled"){
     const {error:revokeError}=await db.from("auth_sessions").update({revoked_at:new Date().toISOString()}).eq("user_id",id).is("revoked_at",null);
@@ -128,8 +128,8 @@ Deno.serve(async(req:Request)=>{
   }
   if(action==="admin_set_role"){
    const id=typeof b.userId==="string"?b.userId:"",role=b.role;if(!id||!["admin","leader","user"].includes(role))return out(400,{ok:false,error:"invalid_role"});
-   const {data:target}=await db.from("profiles").select("id,role").eq("id",id).maybeSingle();if(!target)return out(404,{ok:false,error:"user_not_found"});
-   if(target.role==="admin"&&role!=="admin"){const {count}=await db.from("profiles").select("id",{count:"exact",head:true}).eq("role","admin").eq("status","active");if((count||0)<=1)return out(400,{ok:false,error:"last_active_admin"});}
+   const {data:target,error:targetError}=await db.from("profiles").select("id,role").eq("id",id).maybeSingle();if(targetError){console.error("ROLE TARGET LOOKUP ERROR:",targetError);return out(500,{ok:false,error:"role_update_failed"});}if(!target)return out(404,{ok:false,error:"user_not_found"});
+   if(target.role==="admin"&&role!=="admin"){const {count,error:countError}=await db.from("profiles").select("id",{count:"exact",head:true}).eq("role","admin").eq("status","active");if(countError){console.error("ACTIVE ADMIN COUNT ERROR:",countError);return out(500,{ok:false,error:"role_update_failed"});}if((count||0)<=1)return out(400,{ok:false,error:"last_active_admin"});}
    const {error}=await db.from("profiles").update({role}).eq("id",id);if(error)return out(500,{ok:false,error:"role_update_failed"});
    await audit(auth.p.id,"admin_set_role",id,{role});return out(200,{ok:true});
   }
@@ -146,9 +146,10 @@ Deno.serve(async(req:Request)=>{
   }
   if(action==="admin_delete_user"){
    const id=typeof b.userId==="string"?b.userId:"";if(!id||id===auth.p.id)return out(400,{ok:false,error:"invalid_user"});
-   const {data:target}=await db.from("profiles").select("id,role").eq("id",id).maybeSingle();if(!target)return out(404,{ok:false,error:"user_not_found"});
-   if(target.role==="admin"){const {count}=await db.from("profiles").select("id",{count:"exact",head:true}).eq("role","admin");if((count||0)<=1)return out(400,{ok:false,error:"last_admin"});}
-   await db.from("auth_sessions").update({revoked_at:new Date().toISOString()}).eq("user_id",id).is("revoked_at",null);
+   const {data:target,error:targetError}=await db.from("profiles").select("id,role").eq("id",id).maybeSingle();if(targetError){console.error("DELETE TARGET LOOKUP ERROR:",targetError);return out(500,{ok:false,error:"delete_failed"});}if(!target)return out(404,{ok:false,error:"user_not_found"});
+   if(target.role==="admin"){const {count,error:countError}=await db.from("profiles").select("id",{count:"exact",head:true}).eq("role","admin");if(countError){console.error("ADMIN COUNT ERROR:",countError);return out(500,{ok:false,error:"delete_failed"});}if((count||0)<=1)return out(400,{ok:false,error:"last_admin"});}
+   const {error:revokeError}=await db.from("auth_sessions").update({revoked_at:new Date().toISOString()}).eq("user_id",id).is("revoked_at",null);
+   if(revokeError){console.error("DELETE SESSION REVOKE ERROR:",revokeError);return out(500,{ok:false,error:"delete_failed"});}
    const {error}=await db.from("profiles").delete().eq("id",id);if(error)return out(500,{ok:false,error:"delete_failed"});
    await audit(auth.p.id,"admin_delete_user",id);return out(200,{ok:true});
   }
