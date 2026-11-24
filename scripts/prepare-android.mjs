@@ -6,7 +6,7 @@ const root = process.cwd();
 const www = resolve(root, 'www');
 mkdirSync(www, { recursive: true });
 
-for (const file of ['index.html','app.js','styles.css','theme.js','language.js','manifest.json','sw.js']) {
+for (const file of ['index.html','app.js','styles.css','theme.js','language.js','manifest.json','sw.js','lucide.min.js']) {
   const source = resolve(root, file);
   if (!existsSync(source)) throw new Error(`Required web asset missing: ${file}`);
   cpSync(source, resolve(www, file));
