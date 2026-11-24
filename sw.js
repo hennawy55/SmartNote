@@ -1,4 +1,4 @@
-const CACHE = 'smartnote-offline-shell-v23-supabase-assigned-followups';
+const CACHE = 'smartnote-offline-shell-v27-supabase-assigned-followups';
 const ASSETS = [
   './index.html',
   './styles.css',
