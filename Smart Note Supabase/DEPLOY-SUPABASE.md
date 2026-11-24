@@ -31,8 +31,9 @@ Publish the latest branch contents from the repository through the existing web-
 From the repository root:
 
 ```powershell
-npm ci
+npm install
 npm run prepare:android
+if (!(Test-Path .\\android)) { npx cap add android }
 npx cap sync android
 npx cap open android
 ```
