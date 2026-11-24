@@ -49,11 +49,12 @@ async function login(u:string,pw:string){
  if(accountError){console.error("ACCOUNT LOOKUP ERROR:",accountError);return out(500,{ok:false,error:"login_unavailable"});}
  const candidate=await derive(pw,a?.password_salt||"4a9c2e7b8d1f6035a4c9e2b7d8f10365",a?.password_iterations||ITER);
  if(!a||!equal(candidate,a.password_hash)){
-  const active=attempt?.window_started_at&&now-Date.parse(attempt.window_started_at)<900000;
-  const count=active?(attempt.failed_attempts||0)+1:1;
-  const locked=count>=5?new Date(now+900000).toISOString():null;
-  const {error:rateError}=await db.from("auth_login_attempts").upsert({username_key:key,failed_attempts:count,window_started_at:active?attempt.window_started_at:new Date(now).toISOString(),locked_until:locked});
-  if(rateError){console.error("LOGIN RATE LIMIT UPDATE ERROR:",rateError);return out(500,{ok:false,error:"login_unavailable"});}
+  const {data:rateData,error:rateError}=await db.rpc("record_smartnote_login_failure",{p_username_key:key});
+  if(rateError||!Array.isArray(rateData)||!rateData[0]){
+   console.error("LOGIN RATE LIMIT RPC ERROR:",rateError||"empty_result");
+   return out(500,{ok:false,error:"login_unavailable"});
+  }
+  const locked=!!rateData[0].locked_until&&Date.parse(rateData[0].locked_until)>Date.now();
   return out(locked?429:401,{ok:false,error:locked?"too_many_attempts":"invalid_credentials"});
  }
  const {data:user,error:profileError}=await db.from("profiles").select("id,username,role,status,must_change_password").eq("id",a.user_id).maybeSingle();
