@@ -212,7 +212,7 @@ Deno.serve(async(req:Request)=>{
     const {data:t,error:te}=await db.from("profiles").select("id,username,role,status").eq("id",String(b.toUserId||"")).maybeSingle();if(te)throw te;
     if(!t||t.status!=="active"||t.id===auth.p.id||t.id===a.assignee_id||(auth.p.role!=="admin"&&t.role==="admin"))return out(400,{ok:false,error:"invalid_assignee"});
     const now=new Date().toISOString();const {error}=await db.from("assignments").update({assignee_id:t.id,assignee_name:t.username,assigned_at:now,updated_at:now,viewed_at:null,status:a.status==="viewed"?"new":a.status}).eq("id",id);if(error)throw error;
-    await assignmentActivity(id,auth.p,"reassigned",{from:a.assignee_name,to:t.username});await assignmentNotify(t.id,id,"assigned","متابعة جديدة",a.title+" — تم إسناد متابعة إليك");
+    await assignmentActivity(id,auth.p,"reassigned",{from:a.assignee_name,to:t.username});await assignmentNotify(t.id,id,"assigned","متابعة جديدة",a.title+" — تم إسناد متابعة إليك");await assignmentNotify(a.assignee_id,id,"reassigned","تم إعادة إسناد المتابعة",a.title+" — تم إسنادها إلى "+t.username);
     return out(200,{ok:true,assignment:{...publicA,assigneeId:t.id,assigneeName:t.username}});
    }
    if(action==="assignment_note_add"){
