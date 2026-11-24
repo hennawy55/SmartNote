@@ -29,7 +29,7 @@ begin
 
   insert into public.profiles (id, username, role, status, must_change_password)
   values (new.id, requested_username, 'user', 'active',
-          coalesce((new.raw_user_meta_data ->> 'must_change_password')::boolean, false));
+          false);
 
   return new;
 end;
