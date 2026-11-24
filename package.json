@@ -6,7 +6,7 @@
   "scripts": {
     "android:sync": "cap sync android",
     "android:open": "cap open android",
-    "prepare:android": "mkdir -p www && cp index.html app.js styles.css theme.js language.js manifest.json sw.js www/ && if [ -d icons ]; then cp -r icons www/icons; fi && esbuild android-notifications.js --bundle --format=iife --outfile=www/native-notifications.bundle.js && esbuild android-back.js --bundle --format=iife --outfile=www/native-back.bundle.js"
+    "prepare:android": "node scripts/prepare-android.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^7.4.3",
