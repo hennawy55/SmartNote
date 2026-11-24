@@ -84,7 +84,8 @@ async function login(u:string,pw:string){
 Deno.serve(async(req:Request)=>{
  if(req.method==="OPTIONS")return new Response("ok",{headers:cors});if(req.method!=="POST")return out(405,{ok:false,error:"method_not_allowed"});
  try{
-  const b=await req.json();let action=typeof b.action==="string"?b.action:"";\n  const aliases:Record<string,string>={admin_list:"admin_list_users",admin_create:"admin_create_user",admin_status:"admin_set_status",admin_role:"admin_set_role",admin_delete:"admin_delete_user"};action=aliases[action]||action;if(action==="admin_reset_password"&&b.newPassword===undefined)b.newPassword=b.password;
+  const b=await req.json();let action=typeof b.action==="string"?b.action:"";
+  const aliases:Record<string,string>={admin_list:"admin_list_users",admin_create:"admin_create_user",admin_status:"admin_set_status",admin_role:"admin_set_role",admin_delete:"admin_delete_user"};action=aliases[action]||action;if(action==="admin_reset_password"&&b.newPassword===undefined)b.newPassword=b.password;
   if(action==="login")return await login(b.username,b.password);
   if(action==="bootstrap_admin"){
    const supplied=req.headers.get("x-smartnote-bootstrap")||"";
@@ -97,7 +98,9 @@ Deno.serve(async(req:Request)=>{
    return out(201,{ok:true,user:result,notice:"Remove SMARTNOTE_BOOTSTRAP_SECRET from Edge Function secrets after successful bootstrap."});
   }
   const auth=await session(req);if(!auth)return out(401,{ok:false,error:"session_invalid"});
-  if(action==="me")return out(200,{ok:true,user:auth.p,expiresAt:auth.s.expires_at,data:await readNotebook(auth.p.id)});\n  if(action==="load")return out(200,{ok:true,data:await readNotebook(auth.p.id)});\n  if(action==="save"){if(!b.data||typeof b.data!=="object"||Array.isArray(b.data))return out(400,{ok:false,error:"invalid_database_payload"});const {error}=await db.rpc("replace_smartnote_database",{p_user_id:auth.p.id,p_data:b.data});if(error){console.error("NOTEBOOK SAVE ERROR:",error);return out(500,{ok:false,error:"database_save_failed"});}return out(200,{ok:true,saved:true});}
+  if(action==="me")return out(200,{ok:true,user:auth.p,expiresAt:auth.s.expires_at,data:await readNotebook(auth.p.id)});
+  if(action==="load")return out(200,{ok:true,data:await readNotebook(auth.p.id)});
+  if(action==="save"){if(!b.data||typeof b.data!=="object"||Array.isArray(b.data))return out(400,{ok:false,error:"invalid_database_payload"});const {error}=await db.rpc("replace_smartnote_database",{p_user_id:auth.p.id,p_data:b.data});if(error){console.error("NOTEBOOK SAVE ERROR:",error);return out(500,{ok:false,error:"database_save_failed"});}return out(200,{ok:true,saved:true});}
   if(action==="logout"){
    const {error}=await db.from("auth_sessions").update({revoked_at:new Date().toISOString()}).eq("id",auth.s.id);
    if(error){console.error("LOGOUT ERROR:",error);return out(500,{ok:false,error:"logout_failed"});}
