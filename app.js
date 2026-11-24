@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const API_URL='https://script.google.com/macros/s/AKfycbxtsY2dd-ZKo3z01WeykRYNT9hCjx3LRHs237hkF7Ov0seOI5cfARlSxfUvY6aGVzi-/exec';
+  const API_URL='https://cantyrqkkbqwrajghluw.supabase.co/functions/v1/smartnote-auth';\n  const API_KEY='sb_publishable_PdO0cP98yMMPHLUrJAES0A_b9Z4JlpY';
   const SESSION_KEY='smartnote-auth-session-v2';
   const DATABASE_NAME='SMARTNOTE_USER_DATABASE_V2';
   let authToken='', currentUser=null;
@@ -74,7 +74,7 @@
   function get(type,id){return db[type]?.find(x=>x.id===id)}
   function syncNativeTaskReminders(){if(!window.smartNoteNativeNotifications?.isNative||!isReady)return Promise.resolve();return window.smartNoteNativeNotifications.syncTaskReminders(db.tasks).catch(err=>toast('تعذر جدولة تذكيرات الهاتف: '+err.message))}
   function nameOf(type,id){return get(type,id)?.name||'غير مرتبط'}
-  function setConnection(ok,msg){document.getElementById('connectionDot').classList.toggle('online',!!ok);document.getElementById('connectionText').textContent=ok?'متصل بقاعدة البيانات':'غير متصل';document.getElementById('connectionHint').textContent=msg||(ok?'تم الاتصال بـ Google Sheets.':'يلزم الاتصال بالإنترنت وقاعدة البيانات.')}
+  function setConnection(ok,msg){document.getElementById('connectionDot').classList.toggle('online',!!ok);document.getElementById('connectionText').textContent=ok?'متصل بقاعدة البيانات':'غير متصل';document.getElementById('connectionHint').textContent=msg||(ok?'تم الاتصال بقاعدة بيانات Supabase.':'يلزم الاتصال بالإنترنت وقاعدة البيانات.')}
   function showGate(message){document.getElementById('onlineGateMessage').textContent=message;document.getElementById('onlineGate').style.display='flex'}
   function hideGate(){document.getElementById('onlineGate').style.display='none'}
   function updateQuickAdd(view){const button=document.getElementById('quickAdd'),action=QUICK_ACTIONS[view];button.dataset.quickAddType=action?.[0]||'';button.innerHTML=`<i data-lucide="plus"></i> ${action?.[1]||'إضافة جديدة'}`;if(window.lucide)window.lucide.createIcons({attrs:{'stroke-width':1.8}})}
@@ -137,14 +137,14 @@
       const data=Object.fromEntries(new FormData(e.target).entries());if(type==='note')data.tags=(data.tags||'').split(',').map(x=>x.trim()).filter(Boolean);
       const now=new Date().toISOString(),record={...old,...data,id:id||uid(),createdAt:old?.createdAt||now,updatedAt:now};if(type==='task'){record.status=data.status||old?.status||'معلقة';record.startedAt=record.status==='قيد التنفيذ'?(old?.status===record.status?(old.startedAt||old.updatedAt||now):now):null}if(type==='workspace'&&!record.color)record.color='#5b8cff';
       const next={...db,[collection]:id?db[collection].map(x=>x.id===id?record:x):[record,...db[collection]]};
-      const result=await saveDatabase(next);db=next;localRevision++;cacheLocalDatabase(db,!navigator.onLine||!!result?.queued);renderAll();syncNativeTaskReminders();closeForm();toast(navigator.onLine&&!result?.queued?'تم حفظ البيانات على Google Sheets':'تم الحفظ على الجهاز وستتم المزامنة عند عودة الإنترنت');
+      const result=await saveDatabase(next);db=next;localRevision++;cacheLocalDatabase(db,!navigator.onLine||!!result?.queued);renderAll();syncNativeTaskReminders();closeForm();toast(navigator.onLine&&!result?.queued?'تم حفظ البيانات على Supabase':'تم الحفظ على الجهاز وستتم المزامنة عند عودة الإنترنت');
     }catch(err){toast('فشل الحفظ: '+err.message)}finally{submit.disabled=false;submit.textContent='حفظ البيانات'}
   });
   async function deleteItem(type,id){
     const collection=TYPE_MAP[type]||type;if(!await confirmInApp('هل تريد حذف هذا السجل نهائياً من قاعدة البيانات؟'))return;
     if(!isReady){toast('يلزم تسجيل الدخول أولاً');return}
     const next={...db,[collection]:db[collection].filter(x=>x.id!==id)};
-    try{const result=await saveDatabase(next);db=next;localRevision++;cacheLocalDatabase(db,!navigator.onLine||!!result?.queued);renderAll();syncNativeTaskReminders();toast(navigator.onLine&&!result?.queued?'تم حذف السجل من Google Sheets':'تم الحذف محلياً وستتم المزامنة عند عودة الإنترنت')}catch(err){toast('فشل الحذف: '+err.message)}
+    try{const result=await saveDatabase(next);db=next;localRevision++;cacheLocalDatabase(db,!navigator.onLine||!!result?.queued);renderAll();syncNativeTaskReminders();toast(navigator.onLine&&!result?.queued?'تم حذف السجل من Supabase':'تم الحذف محلياً وستتم المزامنة عند عودة الإنترنت')}catch(err){toast('فشل الحذف: '+err.message)}
   }
   async function changeTaskStatus(id,status,button){
     if(!isReady){toast('يلزم تسجيل الدخول أولاً');return}
@@ -181,9 +181,13 @@
   document.getElementById('globalSearch').addEventListener('keydown',e=>{if(e.key==='Enter')searchAll(e.target.value)});
   function searchAll(q){q=q.trim().toLowerCase();if(!q)return;const results=[];for(const type of TYPES)for(const x of db[type])if(JSON.stringify(x).toLowerCase().includes(q))results.push({type,item:x});document.getElementById('searchCaption').textContent=`${results.length} نتيجة عن: ${q}`;document.getElementById('searchList').innerHTML=results.length?results.map(({type,item})=>`<article class="entity-card"><div class="entity-meta"><span class="pill">${LABELS[type]}</span></div><h3 class="spaced-title">${esc(item.name||item.title||'بدون عنوان')}</h3><p>${esc(item.content||item.description||item.location||item.phone||'')}</p><div class="card-actions"><button class="btn small" data-record-view="${type}" data-id="${esc(item.id)}"><i data-lucide="eye"></i> عرض</button><button class="btn small" data-view="${type}">فتح القسم</button></div></article>`).join(''):emptyHTML('لا توجد نتائج','جرّب كلمات بحث أخرى.');document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));document.getElementById('searchResults').classList.add('active');document.getElementById('pageHeading').textContent='نتائج البحث';document.getElementById('pageSub').textContent='بحث شامل في قاعدة بياناتك';updateQuickAdd('');if(window.lucide)window.lucide.createIcons({attrs:{'stroke-width':1.8}})}
   async function apiPost(payload){
-    const response=await fetch(API_URL,{method:'POST',redirect:'follow',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({...payload,token:authToken})});
-    const raw=await response.text();let result;try{result=JSON.parse(raw)}catch{throw new Error('لم تصل استجابة صالحة من Google Apps Script؛ تحقق من نشر Web App')}
-    if(result.error)throw new Error(result.error);if(result.ok===false)throw new Error('تعذر تنفيذ العملية');return result;
+    const {token:ignoredToken,...body}=payload||{};
+    const headers={'Content-Type':'application/json','apikey':API_KEY};
+    if(authToken&&body.action!=='login')headers['x-smartnote-session']=authToken;
+    const response=await fetch(API_URL,{method:'POST',headers,body:JSON.stringify(body)});
+    const raw=await response.text();let result;try{result=JSON.parse(raw)}catch{throw new Error('لم تصل استجابة صالحة من Supabase؛ تحقق من نشر Edge Function')};
+    if(!response.ok||result.error||result.ok===false){const error=new Error(result.error||'تعذر تنفيذ العملية');error.status=response.status;throw error}
+    return result;
   }
   function cloudPayload(state){return {...state,spaces:state.workspaces||[]}}
   async function saveDatabase(nextState){
