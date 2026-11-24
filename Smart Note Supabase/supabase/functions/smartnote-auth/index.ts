@@ -41,7 +41,7 @@ async function session(req:Request){
 
 async function readNotebook(userId:string){
  const tables=["workspaces","projects","units","notes","clients","tasks"] as const;
- const results=await Promise.all([
+ const results:any[]=await Promise.all([
   ...tables.map(t=>db.from(t).select("data").eq("user_id",userId)),
   db.from("task_notification_dismissals").select("notification_key").eq("user_id",userId)
  ]);
