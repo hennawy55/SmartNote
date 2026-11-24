@@ -1,14 +1,32 @@
-# Custom authentication setup
+# إعداد المصادقة المخصصة
 
-No email or domain is required. The smartnote-auth Edge Function authenticates usernames and passwords and issues opaque random sessions stored only as SHA-256 hashes.
+لا يحتاج النظام إلى بريد إلكتروني أو دومين. تسجيل الدخول يتم باسم المستخدم وكلمة المرور.
 
-Password derivation uses PBKDF2-HMAC-SHA-256 with 600,000 iterations and a unique random salt via Web Crypto. Passwords are never stored in plaintext. This implementation is PBKDF2, not Argon2id.
+## الوظائف الحالية
+- `login`: تسجيل الدخول وإنشاء جلسة عشوائية لمدة 30 يومًا.
+- `me`: التحقق من الجلسة.
+- `logout`: إبطال الجلسة الحالية.
+- `change_password`: تغيير كلمة المرور (10 أحرف على الأقل).
+- `bootstrap_admin`: إنشاء المدير الأول باستخدام سر تهيئة مؤقت.
+- `admin_list_users`: عرض المستخدمين.
+- `admin_create_user`: إنشاء مستخدم.
+- `admin_set_status`: تفعيل/تعطيل الحساب وإبطال جلساته عند التعطيل.
+- `admin_set_role`: تعيين admin أو leader أو user.
+- `admin_reset_password`: تعيين كلمة مرور مؤقتة وإجبار المستخدم على تغييرها.
+- `admin_delete_user`: حذف الحساب نهائيًا (مع مراعاة عدم حذف آخر مدير).
 
-## Deployment
-1. Run migration 202611240003_custom_auth.sql in Supabase SQL Editor.
-2. Install Supabase CLI, sign in, and link this folder to your project.
-3. Deploy with: supabase functions deploy smartnote-auth --no-verify-jwt
-4. The function uses the platform-provided SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY server-side. Never place the service role key in browser code or commit it.
+كلمات المرور مشتقة باستخدام PBKDF2-HMAC-SHA-256 مع 600,000 دورة وملح عشوائي. لا تُخزّن كلمة المرور الأصلية.
 
-## Current scope
-This is an authentication foundation only: login, session check, logout and self-service password change. It does not yet provision users, migrate old accounts, or connect the application UI. All application data access must be moved behind Edge Functions that validate the session and enforce role and ownership rules before release.
+## خطوات النشر
+1. نفّذ بالترتيب migrations من 001 إلى 004 في Supabase SQL Editor. إذا نفذت 001 و002 و003 بالفعل، نفّذ 004 فقط الآن.
+2. ثبّت Supabase CLI، وسجّل الدخول، واربط مجلد المشروع بمعرّف مشروعك.
+3. أضف سرًا عشوائيًا قويًا باسم `SMARTNOTE_BOOTSTRAP_SECRET` إلى Edge Function secrets. لا تضعه في GitHub ولا ترسله في المحادثة.
+4. انشر الوظيفة: `supabase functions deploy smartnote-auth --no-verify-jwt`.
+5. استدعِ `bootstrap_admin` مرة واحدة من أداة محلية آمنة مع ترويسة `x-smartnote-bootstrap`، واسم المستخدم وكلمة مرور قوية في جسم الطلب.
+6. بعد نجاح إنشاء المدير، احذف `SMARTNOTE_BOOTSTRAP_SECRET` من Edge Function secrets ثم أعد نشر الوظيفة. لن تعمل عملية bootstrap بعد وجود مدير بالفعل أيضًا.
+
+## تحذيرات
+- لا تضع `service_role` أو سر bootstrap في HTML أو JavaScript أو GitHub.
+- لا ترسل كلمة المرور أو الأسرار في المحادثة.
+- طبقة التطبيق لم تُربط بعد. كل قراءة وكتابة لبيانات SmartNote يجب أن تمر عبر Edge Functions تتحقق من الجلسة والدور وملكية السجل. لا تنشر التطبيق للمستخدمين قبل إكمال ذلك واختباره.
+- حذف المستخدم قد يتأثر بمراجع البيانات القديمة (foreign keys). في التشغيل الطبيعي يُفضّل التعطيل بدل الحذف، ويجب اختبار سياسة الحذف على بيانات تجريبية أولًا.
