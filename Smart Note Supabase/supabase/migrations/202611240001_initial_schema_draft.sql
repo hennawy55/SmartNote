@@ -44,7 +44,7 @@ create table if not exists public.projects (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   primary key (user_id, id),
-  foreign key (user_id, workspace_id) references public.workspaces(user_id, id) on delete set null
+  foreign key (user_id, workspace_id) references public.workspaces(user_id, id)
 );
 create table if not exists public.units (
   id text not null,
@@ -54,7 +54,7 @@ create table if not exists public.units (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   primary key (user_id, id),
-  foreign key (user_id, project_id) references public.projects(user_id, id) on delete set null
+  foreign key (user_id, project_id) references public.projects(user_id, id)
 );
 create table if not exists public.clients (
   id text not null,
@@ -75,10 +75,10 @@ create table if not exists public.notes (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   primary key (user_id, id),
-  foreign key (user_id, workspace_id) references public.workspaces(user_id, id) on delete set null,
-  foreign key (user_id, project_id) references public.projects(user_id, id) on delete set null,
-  foreign key (user_id, unit_id) references public.units(user_id, id) on delete set null,
-  foreign key (user_id, client_id) references public.clients(user_id, id) on delete set null
+  foreign key (user_id, workspace_id) references public.workspaces(user_id, id),
+  foreign key (user_id, project_id) references public.projects(user_id, id),
+  foreign key (user_id, unit_id) references public.units(user_id, id),
+  foreign key (user_id, client_id) references public.clients(user_id, id)
 );
 create table if not exists public.tasks (
   id text not null,
@@ -165,7 +165,7 @@ create index if not exists assignment_notes_timeline_idx on public.assignment_no
 create table if not exists public.notifications (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
-  assignment_id uuid references public.assignments(id) on delete set null,
+  assignment_id uuid references public.assignments(id),
   type text not null,
   title text not null,
   body text not null,
@@ -178,7 +178,7 @@ create index if not exists notifications_unread_idx on public.notifications(user
 
 create table if not exists public.audit_log (
   id uuid primary key default gen_random_uuid(),
-  actor_id uuid references public.profiles(id) on delete set null,
+  actor_id uuid references public.profiles(id),
   actor_name text not null default '',
   action text not null,
   target_id text not null default '',
@@ -204,8 +204,8 @@ alter table public.notifications enable row level security;
 alter table public.audit_log enable row level security;
 
 -- Profile role/status fields are not self-editable; account provisioning is server-side.
-create policy profiles_read_self_or_admin on public.profiles for select
-  using (id = auth.uid() or public.is_admin());
+create policy profiles_read_self_admin_or_leader on public.profiles for select
+  using (id = auth.uid() or public.is_admin() or (public.current_user_role() = 'leader' and status = 'active'));
 
 -- Personal notebook data: only its owning account (and active sessions) can access it.
 do $$
@@ -220,44 +220,32 @@ end $$;
 -- Assignment visibility: administrator, original distributing leader, or current assignee.
 create policy assignments_read_participants on public.assignments for select
   using (public.is_active_user() and (public.is_admin() or owner_leader_id = auth.uid() or assignee_id = auth.uid()));
-create policy assignments_insert_managers on public.assignments for insert
-  with check (public.is_active_user() and (public.is_admin() or (public.current_user_role() = 'leader' and owner_leader_id = auth.uid() and created_by = auth.uid())));
-create policy assignments_update_participants on public.assignments for update
-  using (public.is_active_user() and (public.is_admin() or owner_leader_id = auth.uid() or assignee_id = auth.uid()))
-  with check (public.is_active_user() and (public.is_admin() or owner_leader_id = auth.uid() or assignee_id = auth.uid()));
 
 create policy assignment_activity_read_participants on public.assignment_activity for select
   using (exists (select 1 from public.assignments a where a.id = assignment_id and (public.is_admin() or a.owner_leader_id = auth.uid() or a.assignee_id = auth.uid())));
-create policy assignment_activity_insert_actor on public.assignment_activity for insert
-  with check (actor_id = auth.uid() and exists (select 1 from public.assignments a where a.id = assignment_id and (public.is_admin() or a.owner_leader_id = auth.uid() or a.assignee_id = auth.uid())));
 
 create policy reassignment_requests_read_participants on public.reassignment_requests for select
   using (from_user_id = auth.uid() or public.is_admin() or exists (select 1 from public.assignments a where a.id = assignment_id and a.owner_leader_id = auth.uid()));
-create policy reassignment_requests_insert_assignee on public.reassignment_requests for insert
-  with check (from_user_id = auth.uid() and status = 'pending' and exists (select 1 from public.assignments a where a.id = assignment_id and a.assignee_id = auth.uid()));
-create policy reassignment_requests_update_owner on public.reassignment_requests for update
-  using (public.is_admin() or exists (select 1 from public.assignments a where a.id = assignment_id and a.owner_leader_id = auth.uid()))
-  with check (public.is_admin() or exists (select 1 from public.assignments a where a.id = assignment_id and a.owner_leader_id = auth.uid()));
 
 create policy assignment_notes_read_visibility on public.assignment_notes for select
   using (
     author_id = auth.uid()
     or (visibility = 'shared' and exists (select 1 from public.assignments a where a.id = assignment_id and (public.is_admin() or a.owner_leader_id = auth.uid() or a.assignee_id = auth.uid())))
   );
-create policy assignment_notes_insert_participant on public.assignment_notes for insert
-  with check (author_id = auth.uid() and exists (select 1 from public.assignments a where a.id = assignment_id and (public.is_admin() or a.owner_leader_id = auth.uid() or a.assignee_id = auth.uid())));
 
 create policy notifications_read_own on public.notifications for select using (user_id = auth.uid());
 create policy notifications_update_own on public.notifications for update using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy audit_log_admin_read on public.audit_log for select using (public.is_admin());
 
+-- Privileged writes for assignments, history, transfer requests and assignment notes will be exposed
+-- through SECURITY DEFINER RPCs with explicit role/ownership checks in the next migration.
 -- Do not expose anonymous access. The application will use authenticated sessions only.
 revoke all on all tables in schema public from anon;
 grant select on public.profiles to authenticated;
 grant select, insert, update, delete on public.workspaces, public.projects, public.units, public.notes, public.clients, public.tasks, public.task_notification_dismissals to authenticated;
-grant select, insert, update on public.assignments to authenticated;
-grant select, insert on public.assignment_activity to authenticated;
-grant select, insert, update on public.reassignment_requests to authenticated;
-grant select, insert on public.assignment_notes to authenticated;
+grant select on public.assignments to authenticated;
+grant select on public.assignment_activity to authenticated;
+grant select on public.reassignment_requests to authenticated;
+grant select on public.assignment_notes to authenticated;
 grant select, update on public.notifications to authenticated;
 grant select on public.audit_log to authenticated;
