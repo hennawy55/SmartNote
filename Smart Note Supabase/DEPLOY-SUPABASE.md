@@ -33,7 +33,7 @@ From the repository root:
 ```powershell
 npm install
 npm run prepare:android
-if (!(Test-Path .\\android)) { npx cap add android }
+if (!(Test-Path .\android)) { npx cap add android }
 npx cap sync android
 npx cap open android
 ```
