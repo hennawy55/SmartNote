@@ -38,6 +38,20 @@ async function session(req:Request){
  if(ue){console.error("SESSION TOUCH ERROR:",ue);throw new Error("session_update_failed");}
  return {s,p};
 }
+
+async function readNotebook(userId:string){
+ const tables=["workspaces","projects","units","notes","clients","tasks"] as const;
+ const results=await Promise.all([
+  ...tables.map(t=>db.from(t).select("data").eq("user_id",userId)),
+  db.from("task_notification_dismissals").select("notification_key").eq("user_id",userId)
+ ]);
+ for(let i=0;i<results.length;i++){if(results[i].error){console.error("NOTEBOOK LOAD ERROR:",tables[i]||"dismissals",results[i].error);throw new Error("database_load_failed");}}
+ const data:Record<string,unknown>={};
+ tables.forEach((t,i)=>{data[t]=((results[i].data||[]) as Array<{data:unknown}>).map(row=>row.data)});
+ data.taskNotificationDismissals=((results[6].data||[]) as Array<{notification_key:string}>).map(row=>row.notification_key);
+ return data;
+}
+
 async function login(u:string,pw:string){
  const key=uname(u);
  if(!validName(key)||typeof pw!=="string"||pw.length<1||pw.length>256)return out(400,{ok:false,error:"invalid_credentials"});
@@ -65,12 +79,12 @@ async function login(u:string,pw:string){
  const token=random(32),expires=new Date(now+DAYS*86400000).toISOString();
  const {error:sessionError}=await db.from("auth_sessions").insert({user_id:a.user_id,token_hash:await hash(token),expires_at:expires});
  if(sessionError){console.error("SESSION CREATE ERROR:",sessionError);return out(500,{ok:false,error:"session_create_failed"});}
- return out(200,{ok:true,token,expiresAt:expires,user});
+ return out(200,{ok:true,token,expiresAt:expires,user,data:await readNotebook(a.user_id)});
 }
 Deno.serve(async(req:Request)=>{
  if(req.method==="OPTIONS")return new Response("ok",{headers:cors});if(req.method!=="POST")return out(405,{ok:false,error:"method_not_allowed"});
  try{
-  const b=await req.json(),action=typeof b.action==="string"?b.action:"";
+  const b=await req.json();let action=typeof b.action==="string"?b.action:"";\n  const aliases:Record<string,string>={admin_list:"admin_list_users",admin_create:"admin_create_user",admin_status:"admin_set_status",admin_role:"admin_set_role",admin_delete:"admin_delete_user"};action=aliases[action]||action;if(action==="admin_reset_password"&&b.newPassword===undefined)b.newPassword=b.password;
   if(action==="login")return await login(b.username,b.password);
   if(action==="bootstrap_admin"){
    const supplied=req.headers.get("x-smartnote-bootstrap")||"";
@@ -83,7 +97,7 @@ Deno.serve(async(req:Request)=>{
    return out(201,{ok:true,user:result,notice:"Remove SMARTNOTE_BOOTSTRAP_SECRET from Edge Function secrets after successful bootstrap."});
   }
   const auth=await session(req);if(!auth)return out(401,{ok:false,error:"session_invalid"});
-  if(action==="me")return out(200,{ok:true,user:auth.p,expiresAt:auth.s.expires_at});
+  if(action==="me")return out(200,{ok:true,user:auth.p,expiresAt:auth.s.expires_at,data:await readNotebook(auth.p.id)});\n  if(action==="load")return out(200,{ok:true,data:await readNotebook(auth.p.id)});\n  if(action==="save"){if(!b.data||typeof b.data!=="object"||Array.isArray(b.data))return out(400,{ok:false,error:"invalid_database_payload"});const {error}=await db.rpc("replace_smartnote_database",{p_user_id:auth.p.id,p_data:b.data});if(error){console.error("NOTEBOOK SAVE ERROR:",error);return out(500,{ok:false,error:"database_save_failed"});}return out(200,{ok:true,saved:true});}
   if(action==="logout"){
    const {error}=await db.from("auth_sessions").update({revoked_at:new Date().toISOString()}).eq("id",auth.s.id);
    if(error){console.error("LOGOUT ERROR:",error);return out(500,{ok:false,error:"logout_failed"});}
