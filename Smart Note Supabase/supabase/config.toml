@@ -1,4 +1,0 @@
-project_id = "smartnote"
-
-[functions.smartnote-auth]
-verify_jwt = false
