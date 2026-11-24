@@ -17,28 +17,53 @@ async function createAccount(username:string,password:string,role="user",mustCha
  const key=uname(username);if(!validName(key)||!validPassword(password)||!["admin","leader","user"].includes(role))return {error:"invalid_account_data"};
  const id=crypto.randomUUID(),salt=random(16),passwordHash=await derive(password,salt);
  const {error:pe}=await db.from("profiles").insert({id,username:key,role,status:"active",must_change_password:mustChange});
- if(pe)return {error:pe.code==="23505"?"username_exists":"profile_create_failed"};
+ if (pe) {
+  console.error("PROFILE INSERT ERROR:", pe);
+  return { error: pe.code === "23505" ? "username_exists" : "profile_create_failed" };
+}
  const {error:ae}=await db.from("auth_accounts").insert({user_id:id,username_key:key,password_hash:passwordHash,password_salt:salt,password_iterations:ITER});
  if(ae){await db.from("profiles").delete().eq("id",id);return {error:"account_create_failed"};}
  return {id,username:key,role,status:"active",must_change_password:mustChange};
 }
 async function session(req:Request){
- const token=req.headers.get("x-smartnote-session")||"";if(!/^[a-f0-9]{64}$/i.test(token))return null;
- const {data:s}=await db.from("auth_sessions").select("id,user_id,expires_at").eq("token_hash",await hash(token)).is("revoked_at",null).gt("expires_at",new Date().toISOString()).maybeSingle();if(!s)return null;
- const {data:p}=await db.from("profiles").select("id,username,role,status,must_change_password").eq("id",s.user_id).maybeSingle();if(!p||p.status!=="active")return null;
- await db.from("auth_sessions").update({last_seen_at:new Date().toISOString()}).eq("id",s.id);return {s,p};
+ const token=req.headers.get("x-smartnote-session")||"";
+ if(!/^[a-f0-9]{64}$/i.test(token))return null;
+ const {data:s,error:se}=await db.from("auth_sessions").select("id,user_id,expires_at").eq("token_hash",await hash(token)).is("revoked_at",null).gt("expires_at",new Date().toISOString()).maybeSingle();
+ if(se){console.error("SESSION LOOKUP ERROR:",se);throw new Error("session_lookup_failed");}
+ if(!s)return null;
+ const {data:p,error:pe}=await db.from("profiles").select("id,username,role,status,must_change_password").eq("id",s.user_id).maybeSingle();
+ if(pe){console.error("PROFILE LOOKUP ERROR:",pe);throw new Error("profile_lookup_failed");}
+ if(!p||p.status!=="active")return null;
+ const {error:ue}=await db.from("auth_sessions").update({last_seen_at:new Date().toISOString()}).eq("id",s.id);
+ if(ue){console.error("SESSION TOUCH ERROR:",ue);throw new Error("session_update_failed");}
+ return {s,p};
 }
 async function login(u:string,pw:string){
- const key=uname(u);if(!validName(key)||typeof pw!=="string"||pw.length<1||pw.length>256)return out(400,{ok:false,error:"invalid_credentials"});
- const now=Date.now(),{data:attempt}=await db.from("auth_login_attempts").select("*").eq("username_key",key).maybeSingle();
+ const key=uname(u);
+ if(!validName(key)||typeof pw!=="string"||pw.length<1||pw.length>256)return out(400,{ok:false,error:"invalid_credentials"});
+ const now=Date.now();
+ const {data:attempt,error:attemptError}=await db.from("auth_login_attempts").select("*").eq("username_key",key).maybeSingle();
+ if(attemptError){console.error("LOGIN ATTEMPT LOOKUP ERROR:",attemptError);return out(500,{ok:false,error:"login_unavailable"});}
  if(attempt?.locked_until&&Date.parse(attempt.locked_until)>now)return out(429,{ok:false,error:"too_many_attempts"});
- const {data:a}=await db.from("auth_accounts").select("*").eq("username_key",key).maybeSingle();
+ const {data:a,error:accountError}=await db.from("auth_accounts").select("*").eq("username_key",key).maybeSingle();
+ if(accountError){console.error("ACCOUNT LOOKUP ERROR:",accountError);return out(500,{ok:false,error:"login_unavailable"});}
  const candidate=await derive(pw,a?.password_salt||"4a9c2e7b8d1f6035a4c9e2b7d8f10365",a?.password_iterations||ITER);
- if(!a||!equal(candidate,a.password_hash)){const active=attempt?.window_started_at&&now-Date.parse(attempt.window_started_at)<900000;const count=active?(attempt.failed_attempts||0)+1:1;const locked=count>=5?new Date(now+900000).toISOString():null;await db.from("auth_login_attempts").upsert({username_key:key,failed_attempts:count,window_started_at:active?attempt.window_started_at:new Date(now).toISOString(),locked_until:locked});return out(locked?429:401,{ok:false,error:locked?"too_many_attempts":"invalid_credentials"});}
- await db.from("auth_login_attempts").delete().eq("username_key",key);
- const token=random(32),expires=new Date(now+DAYS*86400000).toISOString(),{error}=await db.from("auth_sessions").insert({user_id:a.user_id,token_hash:await hash(token),expires_at:expires});
- if(error)return out(500,{ok:false,error:"session_create_failed"});
- const {data:user}=await db.from("profiles").select("id,username,role,status,must_change_password").eq("id",a.user_id).single();
+ if(!a||!equal(candidate,a.password_hash)){
+  const active=attempt?.window_started_at&&now-Date.parse(attempt.window_started_at)<900000;
+  const count=active?(attempt.failed_attempts||0)+1:1;
+  const locked=count>=5?new Date(now+900000).toISOString():null;
+  const {error:rateError}=await db.from("auth_login_attempts").upsert({username_key:key,failed_attempts:count,window_started_at:active?attempt.window_started_at:new Date(now).toISOString(),locked_until:locked});
+  if(rateError){console.error("LOGIN RATE LIMIT UPDATE ERROR:",rateError);return out(500,{ok:false,error:"login_unavailable"});}
+  return out(locked?429:401,{ok:false,error:locked?"too_many_attempts":"invalid_credentials"});
+ }
+ const {data:user,error:profileError}=await db.from("profiles").select("id,username,role,status,must_change_password").eq("id",a.user_id).maybeSingle();
+ if(profileError){console.error("LOGIN PROFILE LOOKUP ERROR:",profileError);return out(500,{ok:false,error:"login_unavailable"});}
+ if(!user||user.status!=="active")return out(403,{ok:false,error:"account_disabled"});
+ const {error:clearError}=await db.from("auth_login_attempts").delete().eq("username_key",key);
+ if(clearError){console.error("LOGIN ATTEMPT RESET ERROR:",clearError);return out(500,{ok:false,error:"login_unavailable"});}
+ const token=random(32),expires=new Date(now+DAYS*86400000).toISOString();
+ const {error:sessionError}=await db.from("auth_sessions").insert({user_id:a.user_id,token_hash:await hash(token),expires_at:expires});
+ if(sessionError){console.error("SESSION CREATE ERROR:",sessionError);return out(500,{ok:false,error:"session_create_failed"});}
  return out(200,{ok:true,token,expiresAt:expires,user});
 }
 Deno.serve(async(req:Request)=>{
@@ -58,14 +83,24 @@ Deno.serve(async(req:Request)=>{
   }
   const auth=await session(req);if(!auth)return out(401,{ok:false,error:"session_invalid"});
   if(action==="me")return out(200,{ok:true,user:auth.p,expiresAt:auth.s.expires_at});
-  if(action==="logout"){await db.from("auth_sessions").update({revoked_at:new Date().toISOString()}).eq("id",auth.s.id);return out(200,{ok:true});}
+  if(action==="logout"){
+   const {error}=await db.from("auth_sessions").update({revoked_at:new Date().toISOString()}).eq("id",auth.s.id);
+   if(error){console.error("LOGOUT ERROR:",error);return out(500,{ok:false,error:"logout_failed"});}
+   return out(200,{ok:true});
+  }
   if(action==="change_password"){
-   const old=typeof b.currentPassword==="string"?b.currentPassword:"",next=b.newPassword;if(!validPassword(next))return out(400,{ok:false,error:"weak_password"});
-   const {data:a}=await db.from("auth_accounts").select("password_hash,password_salt,password_iterations").eq("user_id",auth.p.id).single();
+   const old=typeof b.currentPassword==="string"?b.currentPassword:"",next=b.newPassword;
+   if(!validPassword(next))return out(400,{ok:false,error:"weak_password"});
+   const {data:a,error:lookupError}=await db.from("auth_accounts").select("password_hash,password_salt,password_iterations").eq("user_id",auth.p.id).maybeSingle();
+   if(lookupError){console.error("CHANGE PASSWORD LOOKUP ERROR:",lookupError);return out(500,{ok:false,error:"password_change_failed"});}
    if(!a||!equal(await derive(old,a.password_salt,a.password_iterations),a.password_hash))return out(401,{ok:false,error:"invalid_credentials"});
-   const salt=random(16);await db.from("auth_accounts").update({password_hash:await derive(next,salt),password_salt:salt,password_iterations:ITER,password_changed_at:new Date().toISOString()}).eq("user_id",auth.p.id);
-   await db.from("profiles").update({must_change_password:false}).eq("id",auth.p.id);
-   await db.from("auth_sessions").update({revoked_at:new Date().toISOString()}).eq("user_id",auth.p.id).is("revoked_at",null);
+   const salt=random(16);
+   const {error:passwordError}=await db.from("auth_accounts").update({password_hash:await derive(next,salt),password_salt:salt,password_iterations:ITER,password_changed_at:new Date().toISOString()}).eq("user_id",auth.p.id);
+   if(passwordError){console.error("PASSWORD UPDATE ERROR:",passwordError);return out(500,{ok:false,error:"password_change_failed"});}
+   const {error:profileError}=await db.from("profiles").update({must_change_password:false}).eq("id",auth.p.id);
+   if(profileError){console.error("PASSWORD PROFILE UPDATE ERROR:",profileError);return out(500,{ok:false,error:"password_changed_profile_update_failed",password_changed:true,reauthenticate:true});}
+   const {error:revokeError}=await db.from("auth_sessions").update({revoked_at:new Date().toISOString()}).eq("user_id",auth.p.id).is("revoked_at",null);
+   if(revokeError){console.error("PASSWORD SESSION REVOKE ERROR:",revokeError);return out(500,{ok:false,error:"password_changed_session_revoke_failed",password_changed:true,reauthenticate:true});}
    return out(200,{ok:true,reauthenticate:true});
   }
   if(auth.p.role!=="admin")return out(403,{ok:false,error:"admin_required"});
@@ -84,7 +119,10 @@ Deno.serve(async(req:Request)=>{
    const {data:target}=await db.from("profiles").select("id,role").eq("id",id).maybeSingle();if(!target)return out(404,{ok:false,error:"user_not_found"});
    if(target.role==="admin"&&status==="disabled"){const {count}=await db.from("profiles").select("id",{count:"exact",head:true}).eq("role","admin").eq("status","active");if((count||0)<=1)return out(400,{ok:false,error:"last_active_admin"});}
    const {error}=await db.from("profiles").update({status}).eq("id",id);if(error)return out(500,{ok:false,error:"status_update_failed"});
-   if(status==="disabled")await db.from("auth_sessions").update({revoked_at:new Date().toISOString()}).eq("user_id",id).is("revoked_at",null);
+   if(status==="disabled"){
+    const {error:revokeError}=await db.from("auth_sessions").update({revoked_at:new Date().toISOString()}).eq("user_id",id).is("revoked_at",null);
+    if(revokeError){console.error("STATUS SESSION REVOKE ERROR:",revokeError);return out(500,{ok:false,error:"status_updated_session_revoke_failed",status_updated:true});}
+   }
    await audit(auth.p.id,"admin_set_status",id,{status});return out(200,{ok:true});
   }
   if(action==="admin_set_role"){
@@ -99,8 +137,10 @@ Deno.serve(async(req:Request)=>{
    const {data:target}=await db.from("profiles").select("id").eq("id",id).maybeSingle();if(!target)return out(404,{ok:false,error:"user_not_found"});
    const salt=random(16),{error}=await db.from("auth_accounts").update({password_hash:await derive(pw,salt),password_salt:salt,password_iterations:ITER,password_changed_at:new Date().toISOString()}).eq("user_id",id);
    if(error)return out(500,{ok:false,error:"password_reset_failed"});
-   await db.from("profiles").update({must_change_password:true}).eq("id",id);
-   await db.from("auth_sessions").update({revoked_at:new Date().toISOString()}).eq("user_id",id).is("revoked_at",null);
+   const {error:profileError}=await db.from("profiles").update({must_change_password:true}).eq("id",id);
+   if(profileError){console.error("RESET PASSWORD PROFILE ERROR:",profileError);return out(500,{ok:false,error:"password_reset_profile_update_failed",password_reset:true});}
+   const {error:revokeError}=await db.from("auth_sessions").update({revoked_at:new Date().toISOString()}).eq("user_id",id).is("revoked_at",null);
+   if(revokeError){console.error("RESET PASSWORD SESSION REVOKE ERROR:",revokeError);return out(500,{ok:false,error:"password_reset_session_revoke_failed",password_reset:true});}
    await audit(auth.p.id,"admin_reset_password",id);return out(200,{ok:true});
   }
   if(action==="admin_delete_user"){
