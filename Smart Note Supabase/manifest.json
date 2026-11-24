@@ -1,0 +1,27 @@
+{
+  "id": "./",
+  "name": "SmartNote – Real Estate Notebook",
+  "short_name": "SmartNote",
+  "description": "Organize projects, units, clients, notes and follow-ups.",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b1020",
+  "theme_color": "#762236",
+  "categories": [
+    "business",
+    "productivity"
+  ],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "icons/smartnote-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
