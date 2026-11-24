@@ -127,6 +127,11 @@ Deno.serve(async(req:Request)=>{
    return out(200,{ok:true,reauthenticate:true});
   }
   if(auth.p.role!=="admin")return out(403,{ok:false,error:"admin_required"});
+  if(action==="admin_audit_list"){
+   const {data,error}=await db.from("audit_log").select("*").order("created_at",{ascending:false}).limit(200);
+   if(error){console.error("AUDIT LIST ERROR:",error);return out(500,{ok:false,error:"audit_list_failed"});}
+   return out(200,{ok:true,entries:(data||[]).map((x:any)=>({id:x.id,actorName:x.actor_name,action:x.action,targetId:x.target_id,details:x.details,createdAt:x.created_at,outcome:x.outcome}))});
+  }
   if(action==="admin_list_users"){
    const {data,error}=await db.from("profiles").select("id,username,role,status,must_change_password,created_at,updated_at").order("created_at",{ascending:false});
    if(error)return out(500,{ok:false,error:"list_failed"});return out(200,{ok:true,users:data});
