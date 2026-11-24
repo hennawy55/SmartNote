@@ -1,11 +1,13 @@
-const CACHE = 'smartnote-offline-shell-v22';
+const CACHE = 'smartnote-offline-shell-v26';
 const ASSETS = [
   './index.html',
   './styles.css',
   './app.js',
   './theme.js',
   './language.js',
-  './manifest.json'
+  './manifest.json',
+  './lucide.min.js',
+  './icons/smartnote-icon.svg'
 ];
 
 self.addEventListener('install', event => {
@@ -69,11 +71,12 @@ self.addEventListener('fetch', event => {
 self.addEventListener('notificationclick', event => {
   event.notification.close();
   const taskId = event.notification.data && event.notification.data.taskId;
+  const alertKey = event.notification.data && event.notification.data.key;
   if (!taskId) return;
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     for (const client of windows) {
-      client.postMessage({ type: 'OPEN_TASK_NOTIFICATION', taskId });
+      client.postMessage({ type: 'OPEN_TASK_NOTIFICATION', taskId, key: alertKey });
       if ('focus' in client) return client.focus();
     }
     return self.clients.openWindow(`./?openTask=${encodeURIComponent(taskId)}`);
